@@ -11,7 +11,8 @@ This crate uses 2 nightly(unstable) features:
 # Setup
 Add the dependency to your Cargo.toml file:
 ```toml
-gdext_coroutines = 0.1.0
+[dependencies]
+gdext_coroutines = "0.1.0"
 ```
 Done :)
 
