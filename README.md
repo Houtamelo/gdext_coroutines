@@ -84,7 +84,8 @@ node.start_coroutine(
         godot_print!("First coroutine finished!");
     });
 
-// You can safely check if the coroutine is still "alive", this won't cause errors even if the coroutine has despawned.
+// When accessing the couroutine through `Gd<Coroutine>`, you can safely check if the coroutine is still "alive", this won't cause errors even if the coroutine has despawned.
+// Note that the same is not valid for calling `bind()`/`bind_mut()`, since those require that the instance is still alive.
 if coroutine.is_running() {
     godot_print!("Coroutine is running!");
 }
