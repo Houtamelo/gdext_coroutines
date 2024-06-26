@@ -5,7 +5,7 @@
 #![allow(unused_doc_comments)]
 #![warn(clippy::missing_const_for_fn)]
 
-#![doc = include_str!("../../README.md")]
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod coroutine;
