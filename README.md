@@ -2,12 +2,11 @@
 "Run Rust coroutines in Godot 4.2+ (through GDExtension), inspired on Unity's Coroutines design."
 
 # Beware
-This crate uses nightly and a bunch of unstable features:
+This crate uses 2 nightly(unstable) features:
 ```rs
 #![feature(coroutines)]
 #![feature(coroutine_trait)]
 ```
-Plus a few more from my [utils](https://github.com/Houtamelo/houtamelo_utils) library, which this crate depends on.
 
 # Setup
 Add the dependency to your Cargo.toml file:
