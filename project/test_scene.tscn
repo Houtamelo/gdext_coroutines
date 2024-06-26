@@ -1,0 +1,3 @@
+[gd_scene format=3 uid="uid://20dkna0j76qt"]
+
+[node name="test_scene" type="TestClass"]

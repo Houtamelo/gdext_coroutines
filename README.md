@@ -43,10 +43,7 @@ node.start_coroutine(
 
         let pig: Gd<Node2D> = create_pig();
 
-        yield wait_until(
-            move || {
-                pig.is_flying()
-            });
+        yield wait_until(move || pig.is_flying());
 
         godot_print!("Wow! Pigs are now able to fly! Somehow...");
 
@@ -54,10 +51,7 @@ node.start_coroutine(
 
         let pig: Gd<Node2D> = grab_pig();
 
-        yield wait_while(
-            || {
-                pig.is_flying()
-            });
+        yield wait_while(move || pig.is_flying());
 
         godot_print!("Finally, no more flying pigs, oof.");
     });    
@@ -71,6 +65,8 @@ let coroutine: Gd<Coroutine> =
         .auto_start(false)
         // runs regardless of it's owner's process mode
         .process_mode(ProcessMode::ALWAYS)
+        // Coroutine is polled in _physics_process instead of _process
+        .poll_mode(PollMode::Physics)
         // creates the coroutine object(node) as a child of `node`, although the coroutine function won't automatically run since `auto_start` == `false`
         .spawn(
             #[coroutine] || {
@@ -78,11 +74,11 @@ let coroutine: Gd<Coroutine> =
                 godot_print!("Nice.");
             });
 
-// You can even use coroutines as yields
 node.start_coroutine(
     #[coroutine] move || {
         godot_print!("Waiting until first coroutine finishes...");
 
+        // You can also use coroutines as yields
         yield coroutine.wait_until_finished();
 
         godot_print!("First coroutine finished!");
@@ -97,11 +93,11 @@ if coroutine.is_finished() {
     godot_print!("Coroutine is finished!");
 }
 
-// Methods for controlling the coroutine. Please note that `stop` will destroy the coroutine object.
+// Methods for controlling the coroutine.
 let mut coroutine_bind = coroutine.bind_mut();
 coroutine_bind.resume();
 coroutine_bind.pause();
-coroutine_bind.stop();
+coroutine_bind.kill();
 ```
 
 # How does this do?
@@ -112,6 +108,7 @@ A Coroutine is a struct that derives `Node`:
 pub struct GodotCoroutine {
 	base: Base<Node>,
 	coroutine: Pin<Box<dyn Coroutine<(), Yield = Yield, Return = ()>>>,
+	poll_mode: PollMode,
 	last_yield: Option<Yield>,
 	paused: bool,
 }
@@ -123,22 +120,26 @@ pub fn spawn(
 	self, 
 	f: impl Coroutine<(), Yield = Yield, Return = ()> + 'static,
 ) -> Gd<GodotCoroutine> {
-	let mut coroutine =
-		Gd::from_init_fn(|base| {
-			GodotCoroutine {
-				base,
-				coroutine: Box::pin(f),
-				last_yield: None,
-				paused: !self.auto_start,
-			}
-		});
-	
-	coroutine.set_process_mode(self.process_mode);
+    let mut coroutine =
+        Gd::from_init_fn(|base| {
+            GodotCoroutine {
+                base,
+                coroutine: Box::pin(f),
+                poll_mode: self.poll_mode,
+                last_yield: None,
+                paused: !self.auto_start,
+            }
+        });
+    
+    coroutine.set_process_priority(256);
+    coroutine.set_physics_process_priority(256);
+    
+    coroutine.set_process_mode(self.process_mode);
 
-	let mut owner = self.owner;
-	owner.add_child(coroutine.clone().upcast());
+    let mut owner = self.owner;
+    owner.add_child(coroutine.clone().upcast());
 
-	coroutine
+    coroutine
 }
 ```
 
@@ -147,29 +148,54 @@ Then every frame the `GodotCoroutine` polls the current yield to advance it's in
 #[godot_api]
 impl INode for GodotCoroutine {
 	fn process(&mut self, delta: f64) {
+		match self.poll_mode {
+			PollMode::Process => {}
+			PollMode::Physics => {
+				return;
+			}
+		}
+		
 		if self.paused {
 			return;
 		}
 		
 		let is_finished = self.poll(delta);
 		if is_finished {
-			self.stop();
+			self.kill();
+		}
+	}
+
+	fn physics_process(&mut self, delta: f64) {
+		match self.poll_mode {
+			PollMode::Process => {
+				return;
+			}
+			PollMode::Physics => {}
+		}
+
+		if self.paused {
+			return;
+		}
+
+		let is_finished = self.poll(delta);
+		if is_finished {
+			self.kill();
 		}
 	}
 }
 ```
 
-It automatically destroys itself after finishing:
+It automatically destroys itself after finishing (`kill()` is called when `poll` returns true):
 ```rs
 #[func]
-pub fn stop(&mut self) {
-	let mut base = self.base().to_godot();
+pub fn kill(&mut self) {
+    let mut base = self.base().to_godot();
 
-	if let Some(mut parent) = base.get_parent() {
-		parent.remove_child(base.clone())
-	}
+    if let Some(mut parent) = base.get_parent() {
+        parent.remove_child(base.clone())
+    }
 
-	base.queue_free();
+    base.queue_free();
 }
 ```
 
@@ -181,7 +207,7 @@ And that's it.
 You can make your own custom types of yields, just implement the trait `KeepWaiting`:
 ```rs
 pub trait KeepWaiting {
-	/// Returns true if the coroutine can continue executing.
+	/// The coroutine calls this to check if it should keep waiting
 	fn keep_waiting(&mut self) -> bool;
 }
 ```

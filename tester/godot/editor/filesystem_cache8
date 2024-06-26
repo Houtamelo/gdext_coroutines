@@ -1,7 +1,0 @@
-ea4bc82a6ad023ab7ee23ee620429895
-::res://::1712947750
-default_env.tres::Environment::-1::1712947730::0::1::::<><>::
-export_presets.cfg::TextFile::-1::1712387866::0::1::::<><>::
-test_scene.tscn::PackedScene::-1::1712947730::0::1::::<><>::res://Tester.gdns
-::res://Bin/::1712947124
-gdnative_tweener.tres::GDNativeLibrary::-1::1712947730::0::1::::<><>::

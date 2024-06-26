@@ -6,31 +6,46 @@ use godot::prelude::*;
 
 use crate::prelude::*;
 
+/// The Godot class responsible for managing a coroutine.
+/// This should not be built manually, instead use [CoroutineBuilder] or [node.start_coroutine](StartCoroutine::start_coroutine).
 #[derive(GodotClass)]
 #[class(no_init, base = Node)]
 pub struct GodotCoroutine {
 	base: Base<Node>,
 	coroutine: Pin<Box<dyn Coroutine<(), Yield = Yield, Return = ()>>>,
+	poll_mode: PollMode,
 	last_yield: Option<Yield>,
 	paused: bool,
 }
 
+/// Builder struct for customizing coroutine behavior.
 #[must_use]
 pub struct CoroutineBuilder {
 	owner: Gd<Node>,
+	poll_mode: PollMode,
 	process_mode: ProcessMode,
+	/// Whether the coroutine should be started automatically.
 	auto_start: bool,
+}
+
+/// Defines whether the coroutine polls on process or physics frames. 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum PollMode {
+	Process,
+	Physics,
 }
 
 impl CoroutineBuilder {
 	pub const fn new(owner: Gd<Node>) -> Self {
 		Self {
 			owner,
+			poll_mode: PollMode::Process,
 			process_mode: ProcessMode::INHERIT,
 			auto_start: true,
 		}
 	}
-	
+
+	/// Whether the coroutine should be started automatically.
 	pub fn auto_start(self, auto_start: bool) -> Self {
 		Self {
 			auto_start,
@@ -38,9 +53,18 @@ impl CoroutineBuilder {
 		}
 	}
 	
+	/// Godot [ProcessMode] which the coroutine should run in.
 	pub fn process_mode(self, process_mode: ProcessMode) -> Self {
 		Self {
 			process_mode,
+			..self
+		}
+	}
+	
+	/// See [PollMode]
+	pub fn poll_mode(self, poll_mode: PollMode) -> Self {
+		Self {
+			poll_mode,
 			..self
 		}
 	}
@@ -54,10 +78,14 @@ impl CoroutineBuilder {
 				GodotCoroutine {
 					base,
 					coroutine: Box::pin(f),
+					poll_mode: self.poll_mode,
 					last_yield: None,
 					paused: !self.auto_start,
 				}
 			});
+		
+		coroutine.set_process_priority(256);
+		coroutine.set_physics_process_priority(256);
 		
 		coroutine.set_process_mode(self.process_mode);
 
@@ -93,14 +121,14 @@ impl GodotCoroutine {
 	pub fn resume(&mut self) {
 		self.paused = false;
 	}
-
+	
 	#[func]
 	pub fn pause(&mut self) {
 		self.paused = true;
 	}
-
+	
 	#[func]
-	pub fn stop(&mut self) {
+	pub fn kill(&mut self) {
 		let mut base = self.base().to_godot();
 
 		if let Some(mut parent) = base.get_parent() {
@@ -114,13 +142,38 @@ impl GodotCoroutine {
 #[godot_api]
 impl INode for GodotCoroutine {
 	fn process(&mut self, delta: f64) {
+		match self.poll_mode {
+			PollMode::Process => {}
+			PollMode::Physics => {
+				return;
+			}
+		}
+		
 		if self.paused {
 			return;
 		}
 		
 		let is_finished = self.poll(delta);
 		if is_finished {
-			self.stop();
+			self.kill();
+		}
+	}
+
+	fn physics_process(&mut self, delta: f64) {
+		match self.poll_mode {
+			PollMode::Process => {
+				return;
+			}
+			PollMode::Physics => {}
+		}
+
+		if self.paused {
+			return;
+		}
+
+		let is_finished = self.poll(delta);
+		if is_finished {
+			self.kill();
 		}
 	}
 }

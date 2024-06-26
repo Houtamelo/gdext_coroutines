@@ -6,7 +6,12 @@ edition = "2021"
 description = "Run Rust coroutines in Godot 4.2+ (through GDExtension), inspired on Unity's Coroutines design."
 license = "MIT"
 repository = "https://github.com/Houtamelo/gdext_coroutines"
-categories = ["game-development", "api-bindings"]
+categories = ["game-development", "api-bindings", "asynchronous"]
+keywords = ["godot", "coroutines", "gdextension", "async"]
+readme = "../README.md"
+exclude = [
+    ".idea/*"
+]
 
 [lib]
 crate-type = ["lib", "cdylib"]
@@ -16,5 +21,7 @@ godot = "0.1.1"
 util = { package = "houtamelo_utils", version = "2.0" }
 
 [features]
-default = []
 integration_tests = []
+
+[package.metadata.docs.rs]
+rustdoc-args = ["--cfg", "docsrs"]

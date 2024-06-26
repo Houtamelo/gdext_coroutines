@@ -37,3 +37,5 @@ target/
 test.sh
 tramp
 .history/*
+*/.idea/*
+bin/

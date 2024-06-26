@@ -1,19 +1,17 @@
-#![feature(iterator_try_collect)]
-#![feature(let_chains)]
-#![feature(const_type_name)]
-#![feature(hash_extract_if)]
-#![feature(iter_array_chunks)]
 #![feature(coroutines)]
-#![feature(iter_from_coroutine)]
 #![feature(coroutine_trait)]
 #![allow(clippy::needless_return)]
 #![allow(clippy::useless_conversion)]
 #![allow(unused_doc_comments)]
 #![warn(clippy::missing_const_for_fn)]
 
+#![doc = include_str!("../../README.md")]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 mod coroutine;
 mod yielding;
-mod tests;
+
+#[cfg(feature = "integration_tests")] mod tests;
 
 struct Coroutines;
 
