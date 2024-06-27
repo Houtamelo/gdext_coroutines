@@ -3,6 +3,11 @@ use godot::prelude::*;
 
 use crate::prelude::*;
 
+struct IntegrationTests;
+
+#[gdextension]
+unsafe impl ExtensionLibrary for IntegrationTests {}
+
 #[derive(GodotClass)]
 #[class(init, base = Node)]
 struct TestClass {

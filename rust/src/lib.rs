@@ -13,11 +13,6 @@ mod yielding;
 
 #[cfg(feature = "integration_tests")] mod tests;
 
-struct Coroutines;
-
-#[godot::prelude::gdextension]
-unsafe impl godot::prelude::ExtensionLibrary for Coroutines {}
-
 pub mod prelude {
 	pub use crate::coroutine::*;
 	pub use crate::yielding::*;
