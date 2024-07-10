@@ -1,23 +1,37 @@
 # gdext_coroutines
+
 "Run Rust coroutines in Godot 4.2+ (through GDExtension), inspired on Unity's Coroutines design."
 
 # Beware
-This crate uses 2 nightly(unstable) features:
+
+This crate uses 5 nightly(unstable) features:
+
 ```rs
 #![feature(coroutines)]
 #![feature(coroutine_trait)]
+#![feature(stmt_expr_attributes)]
+#![feature(unboxed_closures)]
+#![cfg_attr(feature = "async", feature(async_fn_traits))]
 ```
 
+It also requires GdExtension's `experimental_threads` feature
+
 # Setup
+
 Add the dependency to your Cargo.toml file:
+
 ```toml
 [dependencies]
-gdext_coroutines = "0.1.0"
+gdext_coroutines = "0.2"
 ```
+
 Done :)
 
 # What does this do?
-Allows you to execute code in an asynchronous manner, the coroutines of this crate work very much like Unity's:
+
+Allows you to execute code in an asynchronous manner, the coroutines of this crate work very much like Unity's.
+
+It also allows you to execute async functions in Godot. (requires feature `async`)
 
 ```rs
 use gdext_coroutines::prelude::*;
@@ -54,10 +68,24 @@ node.start_coroutine(
         yield wait_while(move || pig.is_flying());
 
         godot_print!("Finally, no more flying pigs, oof.");
-    });    
+    });
+
+node.start_async_fn(
+    async {
+        godot_print!("Executing async code!");
+        
+        smol::Timer::after(Duration::from_secs(10)).await;
+        
+        godot_print!("Async function finished after 10 seconds!");
+    });
 ```
 
+For more examples, check the `integration_tests` module.
+
+---
+
 You can also configure the behavior of the coroutine:
+
 ```rs
 let coroutine: Gd<Coroutine> =
     node.build_coroutine()
@@ -102,7 +130,9 @@ coroutine_bind.kill();
 ```
 
 # How does this do?
+
 A Coroutine is a struct that derives `Node`:
+
 ```rs
 #[derive(GodotClass)]
 #[class(no_init, base = Node)]
@@ -116,6 +146,7 @@ pub struct GodotCoroutine {
 ```
 
 When you call `spawn()` or `start_coroutine()`, a `GodotCoroutine` node is created, then added as a child of the caller:
+
 ```rs
 pub fn spawn(
 	self, 
@@ -144,7 +175,8 @@ pub fn spawn(
 }
 ```
 
-Then every frame the `GodotCoroutine` polls the current yield to advance it's inner function.
+Then every frame the `GodotCoroutine` polls the current yield to advance its inner function.
+
 ```rs
 #[godot_api]
 impl INode for GodotCoroutine {
@@ -187,6 +219,7 @@ impl INode for GodotCoroutine {
 ```
 
 It automatically destroys itself after finishing (`kill()` is called when `poll` returns true):
+
 ```rs
 #[func]
 pub fn kill(&mut self) {
@@ -204,8 +237,19 @@ And that's it.
 
 ---
 
-### Also
+### Also 1
+You can await coroutines from GdScript, using the signal `finished`:
+```js
+var coroutine: GodotCoroutine = ..
+var result = await coroutine.finished
+```
+
+---
+
+### Also 2
+
 You can make your own custom types of yields, just implement the trait `KeepWaiting`:
+
 ```rs
 pub trait KeepWaiting {
 	/// The coroutine calls this to check if it should keep waiting
@@ -214,6 +258,7 @@ pub trait KeepWaiting {
 ```
 
 Then you can use that trait like this:
+
 ```rs
 let my_custom_yield: dyn KeepWaiting = ...;
 
