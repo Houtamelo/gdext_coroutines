@@ -2,7 +2,7 @@ use godot::prelude::*;
 
 use crate::prelude::*;
 
-/// Enum that tells the coroutine how long it should wait
+/// Possible wait modes for coroutines.
 pub enum Yield {
 	Frames(i64),
 	Seconds(f64),
@@ -29,7 +29,6 @@ impl KeepWaiting for Gd<GodotCoroutine> {
 	}
 }
 
-
 pub trait WaitUntilFinished {
 	fn wait_until_finished(&self) -> Yield;
 }
@@ -48,7 +47,10 @@ impl WaitUntilFinished for GodotCoroutine {
 
 /// Coroutine pauses execution as long as `f` returns true.
 /// 
-/// `f` is invoked whenever the coroutine is polled. (Either on [process](INode::process) or [physics_process](INode::physics_process))
+/// `f` is invoked whenever the coroutine is polled. 
+/// 
+/// If un-paused, the coroutine is polled either on [_process](INode::process) or [_physics_process]
+/// (INode::physics_process)
 pub fn wait_while(f: impl FnMut() -> bool + 'static) -> Yield {
 	Yield::Dyn(Box::new(f))
 }

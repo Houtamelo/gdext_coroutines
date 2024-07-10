@@ -1,4 +1,7 @@
+use std::time::Duration;
+
 use godot::classes::node::ProcessMode;
+use godot::obj::WithBaseField;
 use godot::prelude::*;
 
 use crate::prelude::*;
@@ -12,6 +15,18 @@ unsafe impl ExtensionLibrary for IntegrationTests {}
 #[class(init, base = Node)]
 struct TestClass {
 	base: Base<Node>,
+}
+
+#[godot_api]
+impl TestClass {
+	#[func]
+	fn test_routine(&mut self) -> Gd<GodotCoroutine> {
+		self.start_async_fn(
+			async {
+				smol::Timer::after(Duration::from_secs(1)).await;
+				5_i32
+			})
+	}
 }
 
 #[godot_api]
@@ -30,7 +45,7 @@ fn log_err(msg: impl std::fmt::Display) {
 	godot_print_rich!("[color=red]ERROR[/color]: [{:.6}] {msg}", godot::classes::Engine::singleton().get_process_frames());
 }
 
-fn test_1(mut node: Gd<Node>) {
+fn test_1(node: Gd<Node>) {
 	log("Starting test 1");
 
 	let first_routine =
@@ -68,13 +83,13 @@ fn test_1(mut node: Gd<Node>) {
 
 				{
 					let time = godot::classes::Time::singleton();
-					
+
 					let start_time = time.get_ticks_msec() as i64;
 
 					yield seconds(1.5);
 
 					let current_time = time.get_ticks_msec() as i64;
-					
+
 					let time_passed = current_time - start_time;
 					log(format!("Time passed after 1.5 seconds yield: {time_passed} ms"));
 				}
@@ -116,7 +131,7 @@ fn test_1(mut node: Gd<Node>) {
 
 	let node_ref = node.clone();
 
-	node.build_coroutine()
+	node.coroutine()
 	    .auto_start(true)
 	    .process_mode(ProcessMode::INHERIT)
 	    .spawn(
@@ -139,11 +154,11 @@ fn test_1(mut node: Gd<Node>) {
 		    });
 }
 
-fn test_2(mut node: Gd<Node>) {
+fn test_2(node: Gd<Node>) {
 	log("Starting test 2");
 
 	let mut paused_routine =
-		node.build_coroutine()
+		node.coroutine()
 		    .auto_start(false)
 		    .spawn(
 			    #[coroutine] || {
@@ -174,7 +189,7 @@ fn test_2(mut node: Gd<Node>) {
 		});
 }
 
-fn test_3(mut node: Gd<Node>) {
+fn test_3(node: Gd<Node>) {
 	log("Starting test 3");
 
 	let mut frames_routine =
@@ -188,6 +203,11 @@ fn test_3(mut node: Gd<Node>) {
 					yield frames(1);
 					frame_count += 1;
 					log(format!("Frames routine frame count: {frame_count}"));
+
+					if frame_count >= 6000 {
+						log("Frames routine finished");
+						break;
+					}
 				}
 			});
 
@@ -238,7 +258,7 @@ fn test_3(mut node: Gd<Node>) {
 		});
 }
 
-fn test_4(mut node: Gd<Node>) {
+fn test_4(node: Gd<Node>) {
 	log("Starting test 4");
 
 	log("Pausing Scene Tree");
@@ -246,7 +266,7 @@ fn test_4(mut node: Gd<Node>) {
 	node.get_tree().unwrap().set_pause(true);
 
 	let mut inherit_routine =
-		node.build_coroutine()
+		node.coroutine()
 		    .auto_start(true)
 		    .process_mode(ProcessMode::INHERIT)
 		    .spawn(
@@ -260,7 +280,7 @@ fn test_4(mut node: Gd<Node>) {
 
 	let node_ref = node.clone();
 
-	node.build_coroutine()
+	node.coroutine()
 	    .auto_start(true)
 	    .process_mode(ProcessMode::ALWAYS)
 	    .spawn(
@@ -273,7 +293,7 @@ fn test_4(mut node: Gd<Node>) {
 
 			    {
 				    let mut bind = inherit_routine.bind_mut();
-				    bind.kill(); 
+				    bind.kill();
 			    }
 
 			    log("Resuming Scene Tree");
@@ -281,9 +301,11 @@ fn test_4(mut node: Gd<Node>) {
 			    node_ref.get_tree().unwrap().set_pause(false);
 
 			    log("Test 4 finished");
+
+			    test_5(node_ref);
 		    });
 
-	node.build_coroutine()
+	node.coroutine()
 	    .auto_start(false)
 	    .process_mode(ProcessMode::INHERIT)
 	    .spawn(
@@ -294,4 +316,68 @@ fn test_4(mut node: Gd<Node>) {
 
 			    log_err("False auto_start routine finished");
 		    });
+}
+
+fn test_5(node: Gd<Node>) {
+	log("Starting test 5");
+
+	let mut coroutine =
+		node.start_coroutine(
+			#[coroutine] || {
+				log("Starting really long coroutine");
+
+				yield seconds(1000.0);
+
+				log("Really long coroutine finished");
+			});
+
+	coroutine.bind_mut().run_to_completion();
+
+	let mut coroutine_with_return =
+		node.start_coroutine(
+			#[coroutine] || {
+				yield frames(1);
+
+				"Hello world"
+			});
+
+	let ret = coroutine_with_return.bind_mut().run_to_completion();
+	log(format!("Returned value: `{ret}`"));
+
+	node.coroutine()
+	    .on_finish(|x: i32| {
+		    log(format!("Returned value: {x}"))
+	    })
+	    .spawn(#[coroutine] || {
+		    yield frames(5);
+		    5_i32
+	    });
+
+	node.coroutine()
+	    .spawn_async_fn(async {
+		    log("Async coroutine started");
+
+		    smol::Timer::after(Duration::from_secs(10)).await;
+
+		    log("Async coroutine finished");
+	    });
+
+	node.coroutine()
+	    .callable_on_finish(Callable::from_fn("anon",
+		    |args| {
+			    match args.first() {
+				    Some(var) => log(format!("Args: {var:?}")),
+				    None => log_err("Args array is empty"),
+			    }
+
+			    log("Test 5 finished");
+
+			    Ok(Variant::nil())
+		    }))
+	    .spawn(#[coroutine] || {
+		    yield frames(2);
+		    5.0
+	    })
+	    .bind_mut()
+	    .finish_with(5_i32.to_variant());
 }

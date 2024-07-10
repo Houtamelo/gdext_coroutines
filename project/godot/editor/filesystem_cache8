@@ -1,5 +1,6 @@
 ea4bc82a6ad023ab7ee23ee620429895
-::res://::1719415486
+::res://::1720568595
 export_presets.cfg::TextFile::-1::1719413654::0::1::::<><>::
 rust.gdextension::GDExtension::-1::1719409159::0::1::::<><>::
-test_scene.tscn::PackedScene::1946908914948475743::1719414507::0::1::::<><>::
+test_from_gd_script.gd::GDScript::-1::1720568288::0::1::::<>TestClass<>::
+test_scene.tscn::PackedScene::1946908914948475743::1720568292::0::1::::<><>::res://test_from_gd_script.gd
