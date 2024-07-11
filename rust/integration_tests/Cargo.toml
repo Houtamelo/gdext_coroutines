@@ -1,0 +1,12 @@
+[package]
+name = "integration_tests"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["lib", "cdylib"]
+
+[dependencies]
+gdext_coroutines = { path = "..", features = ["async"] }
+godot = "0.1"
+smol = "2.0"

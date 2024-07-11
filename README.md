@@ -1,12 +1,12 @@
 # gdext_coroutines
 
-"Run Rust coroutines in Godot 4.2+ (through GDExtension), inspired on Unity's Coroutines design."
+"Run Rust coroutines and async code in Godot 4.2+ (through GDExtension), inspired on Unity's Coroutines design."
 
 # Beware
 
 This crate uses 5 nightly(unstable) features:
 
-```rs
+```rust
 #![feature(coroutines)]
 #![feature(coroutine_trait)]
 #![feature(stmt_expr_attributes)]
@@ -22,7 +22,7 @@ Add the dependency to your Cargo.toml file:
 
 ```toml
 [dependencies]
-gdext_coroutines = "0.2"
+gdext_coroutines = "0.3"
 ```
 
 Done :)
@@ -31,226 +31,116 @@ Done :)
 
 Allows you to execute code in an asynchronous manner, the coroutines of this crate work very much like Unity's.
 
-It also allows you to execute async functions in Godot. (requires feature `async`)
+It also allows you to execute async code(futures), the implementation uses the crate `smol` and requires the feature `async`.
 
-```rs
+```rust ignore
+#![feature(coroutines)]
 use gdext_coroutines::prelude::*;
+use godot::prelude::*;
 
-let mut node: Gd<Label> = ..;
-node.start_coroutine(
-    #[coroutine] || {
-        godot_print!("Starting coroutine");
+fn run_some_routines(node: Gd<Label>) {
+	node.start_coroutine(
+		#[coroutine] || {
+			godot_print!("Starting coroutine");
+            
+			godot_print!("Waiting for 5 seconds...");
+			yield seconds(5.0);
+			godot_print!("5 seconds have passed!");
 
-        godot_print!("Waiting for 5 seconds...");
+			godot_print!("Waiting for 30 frames");
+			yield frames(30);
+			godot_print!("30 frames have passed!");
 
-        yield seconds(5.0);
+			godot_print!("Waiting until pigs start flying...");
+			let pig: Gd<Node2D> = create_pig();
+			yield wait_until(move || pig.is_flying());
+			godot_print!("Wow! Pigs are now able to fly! Somehow...");
+            
+			godot_print!("Waiting while pigs are still flying...");
+			let pig: Gd<Node2D> = grab_pig();
+			yield wait_while(move || pig.is_flying());
+			godot_print!("Finally, no more flying pigs, oof.");
+		});
 
-        godot_print!("5 seconds have passed!");
-
-        godot_print!("Waiting for 30 frames");
-
-        yield frames(30);
-
-        godot_print!("30 frames have passed!");
-
-        godot_print!("Waiting until pigs start flying...");
-
-        let pig: Gd<Node2D> = create_pig();
-
-        yield wait_until(move || pig.is_flying());
-
-        godot_print!("Wow! Pigs are now able to fly! Somehow...");
-
-        godot_print!("Waiting while pigs are still flying...");
-
-        let pig: Gd<Node2D> = grab_pig();
-
-        yield wait_while(move || pig.is_flying());
-
-        godot_print!("Finally, no more flying pigs, oof.");
-    });
-
-node.start_async_fn(
-    async {
-        godot_print!("Executing async code!");
-        
-        smol::Timer::after(Duration::from_secs(10)).await;
-        
-        godot_print!("Async function finished after 10 seconds!");
-    });
+	node.start_coroutine(
+		async {
+			godot_print!("Executing async code!");
+			smol::Timer::after(Duration::from_secs(10)).await;
+			godot_print!("Async function finished after 10 real time seconds!");
+		});
+}
 ```
 
-For more examples, check the `integration_tests` module.
+For more examples, check the `integration_tests` folder in the repository.
 
 ---
 
-You can also configure the behavior of the coroutine:
-
-```rs
-let coroutine: Gd<Coroutine> =
-    node.build_coroutine()
-        // does not start automatically upon spawning
-        .auto_start(false)
-        // runs regardless of it's owner's process mode
-        .process_mode(ProcessMode::ALWAYS)
-        // Coroutine is polled in _physics_process instead of _process
-        .poll_mode(PollMode::Physics)
-        // creates the coroutine object(node) as a child of `node`, although the coroutine function won't automatically run since `auto_start` == `false`
-        .spawn(
-            #[coroutine] || {
-                yield frames(69);
-                godot_print!("Nice.");
-            });
-
-node.start_coroutine(
-    #[coroutine] move || {
-        godot_print!("Waiting until first coroutine finishes...");
-
-        // You can also use coroutines as yields
-        yield coroutine.wait_until_finished();
-
-        godot_print!("First coroutine finished!");
-    });
-
-// When accessing the couroutine through `Gd<Coroutine>`, you can safely check if the coroutine is still "alive", this won't cause errors even if the coroutine has despawned.
-// Note that the same is not valid for calling `bind()`/`bind_mut()`, since those require that the instance is still alive.
-if coroutine.is_running() {
-    godot_print!("Coroutine is running!");
-}
-
-if coroutine.is_finished() {
-    godot_print!("Coroutine is finished!");
-}
-
-// Methods for controlling the coroutine.
-let mut coroutine_bind = coroutine.bind_mut();
-coroutine_bind.resume();
-coroutine_bind.pause();
-coroutine_bind.kill();
-```
-
 # How does this do?
 
-A Coroutine is a struct that derives `Node`:
-
-```rs
+A Coroutine is a struct that derives `Node`
+```rust ignore
 #[derive(GodotClass)]
 #[class(no_init, base = Node)]
-pub struct GodotCoroutine {
-	base: Base<Node>,
-	coroutine: Pin<Box<dyn Coroutine<(), Yield = Yield, Return = ()>>>,
-	poll_mode: PollMode,
-	last_yield: Option<Yield>,
-	paused: bool,
-}
+pub struct SpireCoroutine { /* .. */ }
 ```
 
-When you call `spawn()` or `start_coroutine()`, a `GodotCoroutine` node is created, then added as a child of the caller:
+When you call `spawn()` or `start_coroutine()`, a `SpireCoroutine` node is created, then added as a child of the caller.
 
-```rs
-pub fn spawn(
-	self, 
-	f: impl Coroutine<(), Yield = Yield, Return = ()> + 'static,
-) -> Gd<GodotCoroutine> {
-    let mut coroutine =
-        Gd::from_init_fn(|base| {
-            GodotCoroutine {
-                base,
-                coroutine: Box::pin(f),
-                poll_mode: self.poll_mode,
-                last_yield: None,
-                paused: !self.auto_start,
-            }
-        });
-    
-    coroutine.set_process_priority(256);
-    coroutine.set_physics_process_priority(256);
-    
-    coroutine.set_process_mode(self.process_mode);
+Then, on every frame, the `SpireCoroutine` polls the current yield to advance its inner function.
 
-    let mut owner = self.owner;
-    owner.add_child(coroutine.clone().upcast());
-
-    coroutine
-}
-```
-
-Then every frame the `GodotCoroutine` polls the current yield to advance its inner function.
-
-```rs
+```rust ignore
 #[godot_api]
-impl INode for GodotCoroutine {
+impl INode for SpireCoroutine {
 	fn process(&mut self, delta: f64) {
-		match self.poll_mode {
-			PollMode::Process => {}
-			PollMode::Physics => {
-				return;
-			}
-		}
-		
-		if self.paused {
-			return;
-		}
-		
-		let is_finished = self.poll(delta);
-		if is_finished {
-			self.kill();
+		if !self.paused && self.poll_mode == PollMode::Process {
+			self.run(delta);
 		}
 	}
 
 	fn physics_process(&mut self, delta: f64) {
-		match self.poll_mode {
-			PollMode::Process => {
-				return;
-			}
-			PollMode::Physics => {}
-		}
-
-		if self.paused {
-			return;
-		}
-
-		let is_finished = self.poll(delta);
-		if is_finished {
-			self.kill();
+		if !self.paused && self.poll_mode == PollMode::Physics {
+			self.run(delta);
 		}
 	}
 }
 ```
 
-It automatically destroys itself after finishing (`kill()` is called when `poll` returns true):
+Then it automatically destroys itself after finishing:
 
-```rs
-#[func]
-pub fn kill(&mut self) {
-    let mut base = self.base().to_godot();
+```rust ignore
+fn run(&mut self, delta_time: f64) {
+	if let Some(result) = self.poll(delta_time) {
+		self.finish_with(result);
+	}
+}
 
-    if let Some(mut parent) = base.get_parent() {
-        parent.remove_child(base.clone())
-    }
+pub fn finish_with(&mut self, result: Variant) {
+	/* .. */
 
-    base.queue_free();
+	self.base_mut().emit_signal(SIGNAL_FINISHED.into(), &[result]);
+	self.de_spawn();
 }
 ```
 
-And that's it.
+Since the coroutine is a child node of whoever created it, the behavior is tied to its parent:
+- If the parent exits the scene tree, the coroutine pauses running (since it requires `_process/_physics_process` to run).
+- If the parent is queued free, the coroutine is also queued free, and its `finished` signal never triggers.
 
 ---
 
 ### Also 1
 You can await coroutines from GdScript, using the signal `finished`:
 ```js
-var coroutine: GodotCoroutine = ..
+var coroutine: SpireCoroutine = ..
 var result = await coroutine.finished
 ```
 
 ---
 
 ### Also 2
-
 You can make your own custom types of yields, just implement the trait `KeepWaiting`:
 
-```rs
+```rust ignore
 pub trait KeepWaiting {
 	/// The coroutine calls this to check if it should keep waiting
 	fn keep_waiting(&mut self) -> bool;
@@ -259,7 +149,7 @@ pub trait KeepWaiting {
 
 Then you can use that trait like this:
 
-```rs
+```rust ignore
 let my_custom_yield: dyn KeepWaiting = ...;
 
 yield Yield::Dyn(Box::new(my_custom_yield));

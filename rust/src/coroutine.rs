@@ -1,11 +1,12 @@
-use std::marker::PhantomData;
 use std::ops::{Coroutine, CoroutineState};
 use std::pin::Pin;
-use godot::classes::node::ProcessMode;
+
 use godot::obj::WithBaseField;
 use godot::prelude::*;
 
+use crate::closure_types::{OnFinishCall, PivotTrait};
 use crate::prelude::*;
+use crate::yielding::SpireYield;
 
 /// A Godot class responsible for managing a coroutine.
 ///
@@ -15,31 +16,13 @@ use crate::prelude::*;
 /// - [node.run_async_fn](StartCoroutine::start_async_fn)
 #[derive(GodotClass)]
 #[class(no_init, base = Node)]
-pub struct GodotCoroutine {
+pub struct SpireCoroutine {
 	pub(crate) base: Base<Node>,
-	pub(crate) coroutine: Pin<Box<dyn Coroutine<(), Yield = Yield, Return = Variant>>>,
+	pub(crate) coroutine: Pin<Box<dyn Coroutine<(), Yield = SpireYield, Return = Variant>>>,
 	pub(crate) poll_mode: PollMode,
-	pub(crate) last_yield: Option<Yield>,
+	pub(crate) last_yield: Option<SpireYield>,
 	pub(crate) paused: bool,
-}
-
-/// Builder struct for customizing coroutine behavior.
-#[must_use]
-pub struct CoroutineBuilder<T = ()> {
-	pub(crate) owner: Gd<Node>,
-	/// Determines if the coroutine should be polled in [_process](INode::process)
-	/// or [_physics_process](INode::physics_process)
-	pub(crate) poll_mode: PollMode,
-	/// Godot [ProcessMode] which the coroutine should run in.
-	pub(crate) process_mode: ProcessMode,
-	/// Whether the coroutine should be started automatically.
-	pub(crate) auto_start: bool,
-	/// A list of callables to invoke when the coroutine finishes.
-	///
-	/// The callables will be invoked with the coroutine's return value as a Variant.
-	pub(crate) on_finish: Vec<Callable>,
-	/// Type hint for the coroutine's return value.
-	pub(crate) type_hint: PhantomData<T>,
+	pub(crate) calls_on_finish: Vec<OnFinishCall>,
 }
 
 /// Defines whether the coroutine polls on process or physics frames. 
@@ -49,253 +32,178 @@ pub enum PollMode {
 	Physics,
 }
 
-fn coroutine_with_variant_return<T: ToGodot>(
-	f: impl Coroutine<(), Yield = Yield, Return = T>,
-) -> impl Coroutine<(), Yield = Yield, Return = Variant> {
-	#[coroutine] move || {
-		let mut pin = Box::pin(f);
-		loop {
-			match pin.as_mut().resume(()) {
-				CoroutineState::Yielded(_yield) => { yield _yield; }
-				CoroutineState::Complete(result) => { return result.to_variant(); }
-			}
-		}
-	}
-}
-
-impl<T: ToGodot> CoroutineBuilder<T> {
-	/// Creates a new coroutine builder with default settings.
-	pub const fn new(owner: Gd<Node>) -> Self {
-		Self {
-			owner,
-			poll_mode: PollMode::Process,
-			process_mode: ProcessMode::INHERIT,
-			auto_start: true,
-			on_finish: Vec::new(),
-			type_hint: PhantomData,
-		}
-	}
-
-	/// Whether the coroutine should be started automatically.
-	pub fn auto_start(self, auto_start: bool) -> Self {
-		Self {
-			auto_start,
-			..self
-		}
-	}
-
-	/// Godot [ProcessMode] which the coroutine should run in.
-	pub fn process_mode(self, process_mode: ProcessMode) -> Self {
-		Self {
-			process_mode,
-			..self
-		}
-	}
-
-	/// Determines if the coroutine should be polled in [_process](INode::process)
-	/// or [_physics_process](INode::physics_process)
-	pub fn poll_mode(self, poll_mode: PollMode) -> Self {
-		Self {
-			poll_mode,
-			..self
-		}
-	}
-
-	/// Adds `f` to the list of closures that will be invoked when the coroutine finishes.
-	/// 
-	/// The return value of the coroutine(`T`) will be passed to `f`.
-	pub fn on_finish(
-		self,
-		f: impl Fn(T) + Send + Sync + 'static,
-	) -> Self 
-		where T: FromGodot
-	{
-		self.callable_on_finish(
-			Callable::from_fn("on_finish_call",
-				move |args| {
-					let conversion_result = 
-						args.first()
-							.ok_or_else(|| ConvertError::new("Args array is empty"))
-							.and_then(|var| var.try_to::<T>())
-							.map_err(|err| {
-								godot_error!("{err}");
-							})?;
-					
-					f(conversion_result);
-					Ok(Variant::nil())
-				})
-		)
-	}
-
-	/// Adds `callable` to the list of callables that will be invoked when the coroutine finishes.
-	///
-	/// The return value of the coroutine(`T`) will be passed to `callable`.
-	pub fn callable_on_finish(self, callable: Callable) -> Self {
-		let mut on_finish = self.on_finish;
-		on_finish.push(callable);
-		Self {
-			on_finish,
-			..self
-		}
-	}
-
-	/// Completes the builder, spawning the coroutine executor.
-	///
-	/// The executor is a node that will be added as a child of `owner`.
-	pub fn spawn(
-		self,
-		f: impl Coroutine<(), Yield = Yield, Return = T> + 'static,
-	) -> Gd<GodotCoroutine> 
-		where T: 'static
-	{
-		let f = coroutine_with_variant_return(f);
-
-		let mut coroutine =
-			Gd::from_init_fn(|base| {
-				GodotCoroutine {
-					base,
-					coroutine: Box::pin(f),
-					poll_mode: self.poll_mode,
-					last_yield: None,
-					paused: !self.auto_start,
-				}
-			});
-
-		coroutine.set_process_priority(256);
-		coroutine.set_physics_process_priority(256);
-
-		coroutine.set_process_mode(self.process_mode);
-
-		for callable in self.on_finish {
-			coroutine.connect(SIGNAL_FINISHED.into(), callable);
-		}
-
-		let mut owner = self.owner;
-		owner.add_child(coroutine.clone().upcast());
-
-		coroutine
-	}
-}
-
 pub trait StartCoroutine {
 	/// Starts a new coroutine with default settings.
 	///
 	/// # Example
 	///
-	/// ```
+	/// ```no_run
 	/// #![feature(coroutines)]
 	/// use godot::prelude::*;
 	/// use gdext_coroutines::prelude::*;
 	///
-	/// let node = Node::new_alloc();
-	///
-	/// node.start_coroutine(
-	///         #[coroutine] || {
-	///             yield frames(5);
-	///
-	///             godot_print!("Profit :3");
-	///         });
-	///
 	/// #[derive(GodotClass)]
 	/// #[class(init, base = Node2D)]
-	/// struct MyClass;
+	/// struct MyClass {
+	///     base: Base<Node2D>,
+	/// }
 	///
 	/// #[godot_api]
 	/// impl MyClass {
 	///     #[func]
 	///     fn do_some_stuff(&self) {
-	///         node.start_coroutine(
+	///         self.start_coroutine( // self can be replaced for Gd<T: Inherits<Node>>
 	///             #[coroutine] || {
 	///                 yield frames(5);
 	///
 	///                 godot_print!("Profit :3");
 	///             });
+	///
+	///         #[cfg(feature = "async")]
+	///         {
+	///             self.start_coroutine( // self can be replaced for Gd<T: Inherits<Node>>
+	///                 async {
+	///                     let result = smol::fs::read_to_string("hello.txt").await;
+	///                     return result.unwrap();
+	///                 });
+	///         }
 	///     }
 	/// }
 	/// ```
-	fn start_coroutine<T: ToGodot + 'static>(
+	fn start_coroutine<Return: ToGodot, Marker>(
 		&self,
-		f: impl Coroutine<(), Yield = Yield, Return = T> + 'static,
-	) -> Gd<GodotCoroutine> {
-		self.coroutine().spawn(f)
+		f: impl PivotTrait<Marker, Return>,
+	) -> Gd<SpireCoroutine> {
+		self.coroutine(f).spawn()
 	}
 
-	#[cfg(feature = "async")]
-	/// Works similarly to [start_coroutine], except it accepts an [async function](Future) as input.
-	///
-	/// Async functions are run in background threads using the crate [smol].
-	///
+	/// Creates a new coroutine builder with default settings.
+	/// 
+	/// The coroutine does not actually `spawn` until you call [CoroutineBuilder::spawn].
+	/// 
 	/// # Example
-	///
-	/// ```
+	/// 
+	/// ```no_run
+	/// #![feature(coroutines)]
+	/// use godot::classes::node::ProcessMode;
 	/// use godot::prelude::*;
 	/// use gdext_coroutines::prelude::*;
 	///
-	/// let node = Node::new_alloc();
-	///
-	/// node.start_async_fn(
-	///         async {
-	///             smol::Timer::after(std::time::Duration::from_secs(5)).await;
-	///             godot_print!("Profit :3"); 
-	///         });
-	/// 
-	/// #[derive(GodotClass)]
-	/// #[class(init, base = Node2D)]
-	/// struct MyClass;
-	/// 
-	/// #[godot_api]
-	/// impl MyClass {
-	///     #[func]
-	///     fn do_some_stuff(&self) {
-	///         self.start_async_fn(
-	///             async {
-	///                 smol::Timer::after(std::time::Duration::from_secs(5)).await;
-	///                 godot_print!("Profit :3"); 
-	///             });
-	///    }
+	/// fn build_coroutine(node: Gd<Node2D>) {
+	///      node.coroutine(
+	///          #[coroutine] || {
+	///              godot_print!("This is a customized coroutine!");
+	///              
+	///              return Array::from(&[20, 30, 50, 69]);
+	///          })
+	///          .auto_start(false)
+	///          .process_mode(ProcessMode::WHEN_PAUSED)
+	///          .spawn();
 	/// }
 	/// ```
-	fn start_async_fn<T: ToGodot + Send + 'static>(
+	fn coroutine<Return: ToGodot, Marker>(
 		&self,
-		f: impl std::future::Future<Output = T> + Send + 'static,
-	) -> Gd<GodotCoroutine> {
-		self.coroutine().spawn_async_fn(f)
-	}
-
-	fn coroutine<T: ToGodot>(&self) -> CoroutineBuilder<T>;
+		f: impl PivotTrait<Marker, Return>,
+	) -> CoroutineBuilder<Return>;
 }
 
-/// Anything that inherits Node can start coroutines.
-impl<T: GodotClass + Inherits<Node>> StartCoroutine for Gd<T> {
-	fn coroutine<TRet: ToGodot>(&self) -> CoroutineBuilder<TRet> {
-		CoroutineBuilder::new(self.clone().upcast())
-	}
-}
-
-impl<'a, T: WithBaseField + GodotClass<Base: Inherits<Node>>> StartCoroutine for &'a T {
-	fn coroutine<TRet: ToGodot>(&self) -> CoroutineBuilder<TRet> {
-		CoroutineBuilder::new(self.base().clone().upcast())
+impl<TSelf> StartCoroutine for Gd<TSelf>
+	where
+		TSelf: GodotClass + Inherits<Node>,
+{
+	fn coroutine<Return: ToGodot, Marker>(
+		&self,
+		f: impl PivotTrait<Marker, Return>,
+	) -> CoroutineBuilder<Return> {
+		CoroutineBuilder::new(self.clone().upcast(), f)
 	}
 }
 
-impl<'a, T: WithBaseField + GodotClass<Base: Inherits<Node>>> StartCoroutine for &'a mut T {
-	fn coroutine<TRet: ToGodot>(&self) -> CoroutineBuilder<TRet> {
-		CoroutineBuilder::new(self.base().clone().upcast())
+impl<'a, T> StartCoroutine for &'a T
+	where
+		T: WithBaseField + GodotClass<Base: Inherits<Node>>,
+{
+	fn coroutine<Return: ToGodot, Marker>(
+		&self,
+		f: impl PivotTrait<Marker, Return>,
+	) -> CoroutineBuilder<Return> {
+		CoroutineBuilder::new(self.base().clone().upcast(), f)
 	}
 }
 
-const SIGNAL_FINISHED: &str = "finished";
+impl<'a, T> StartCoroutine for &'a mut T
+	where
+		T: WithBaseField + GodotClass<Base: Inherits<Node>>,
+{
+	fn coroutine<Return: ToGodot, Marker>(
+		&self,
+		f: impl PivotTrait<Marker, Return>,
+	) -> CoroutineBuilder<Return> {
+		CoroutineBuilder::new(self.base().clone().upcast(), f)
+	}
+}
+
+/// The name of the finished signal.
+/// 
+/// You can manually connect to this signal to get the coroutine's result when it finishes.
+/// 
+/// # Example
+/// 
+/// ```no_run
+/// #![feature(coroutines)]
+/// use gdext_coroutines::prelude::*;
+/// use godot::prelude::*;
+///
+/// fn manually_connect(node: Gd<Node>) {
+///     let mut coroutine = 
+///         node.start_coroutine(
+///             #[coroutine] || {
+///                 yield seconds(2.0);
+///                 
+///                 return "Hello, I'm 2 seconds late!";
+///             });
+///      
+///     coroutine.connect(SIGNAL_FINISHED.into(), Callable::from_fn("print_result", 
+///         |args| {
+///             let result = args.first().and_then(|var| var.try_to::<String>().ok()).unwrap();
+///             assert_eq!(result.as_str(), "Hello, I'm 2 seconds late!");
+///             Ok(Variant::nil())
+///         }));
+/// }
+/// ```
+pub const SIGNAL_FINISHED: &str = "finished";
 
 #[godot_api]
-impl GodotCoroutine {
+impl SpireCoroutine {
 	#[signal]
 	fn finished(result: Variant) {}
 	
+	#[func]
+	fn is_paused(&self) -> bool {
+		self.paused
+	}
+	
+	#[func]
+	fn is_running(&self) -> bool {
+		!self.paused && !self.base().is_queued_for_deletion()
+	}
+	
+	#[func]
+	fn is_finished(&self) -> bool {
+		self.base().is_queued_for_deletion()
+	}
+
+	/// Resumes the coroutine.
+	/// 
+	/// Resuming a coroutine that's already running doesn't do anything.
 	#[func]
 	pub fn resume(&mut self) {
 		self.paused = false;
 	}
 
+	/// Pauses the coroutine, ensuring it won't execute any instructions until it is resumed.
+	/// 
+	/// Pausing a coroutine that's already paused doesn't do anything.
 	#[func]
 	pub fn pause(&mut self) {
 		self.paused = true;
@@ -305,9 +213,9 @@ impl GodotCoroutine {
 	///
 	/// Does not trigger the `finished` signal, the result is returned directly.
 	///
-	/// Be careful, running all the instructions in a coroutine can lead to unexpected results.
+	/// Be careful, running all the instructions in a coroutine at once can lead to unexpected results.
 	#[func]
-	pub fn run_to_completion(&mut self) -> Variant {
+	pub fn force_run_to_completion(&mut self) -> Variant {
 		let mut iters_remaining = 4096;
 
 		loop {
@@ -329,22 +237,39 @@ impl GodotCoroutine {
 		}
 	}
 
-	/// De-spawns the coroutine without triggering the `finished` signal
+	/// De-spawns the coroutine.
+	///
+	/// Does not trigger the `finished` signal.
 	#[func]
 	pub fn kill(&mut self) {
 		self.de_spawn();
 	}
 
-	/// De-spawns the coroutine and triggers the `finished` signal with `result` as the argument
+	/// De-spawns the coroutine.
+	///
+	/// Triggers the `finished` signal with `result` as the argument.
 	#[func]
 	pub fn finish_with(&mut self, result: Variant) {
+		for call in self.calls_on_finish.drain(..) {
+			match call {
+				OnFinishCall::Closure(closure) => {
+					closure(result.clone());
+				}
+				OnFinishCall::Callable(callable) => {
+					if callable.is_valid() {
+						callable.callv(VariantArray::from(&[result.clone()]));
+					}
+				}
+			}
+		}
+
 		self.base_mut().emit_signal(SIGNAL_FINISHED.into(), &[result]);
 		self.de_spawn();
 	}
 }
 
 #[godot_api]
-impl INode for GodotCoroutine {
+impl INode for SpireCoroutine {
 	fn process(&mut self, delta: f64) {
 		if !self.paused && self.poll_mode == PollMode::Process {
 			self.run(delta);
@@ -358,7 +283,7 @@ impl INode for GodotCoroutine {
 	}
 }
 
-impl GodotCoroutine {
+impl SpireCoroutine {
 	fn de_spawn(&mut self) {
 		let mut base = self.base().to_godot();
 
@@ -374,10 +299,10 @@ impl GodotCoroutine {
 			self.finish_with(result);
 		}
 	}
-	
+
 	fn poll(&mut self, delta_time: f64) -> Option<Variant> {
 		match &mut self.last_yield {
-			Some(Yield::Frames(frames)) => {
+			Some(SpireYield::Frames(frames)) => {
 				if *frames > 0 {
 					*frames -= 1;
 					None
@@ -386,7 +311,7 @@ impl GodotCoroutine {
 					self.poll(delta_time)
 				}
 			}
-			Some(Yield::Seconds(seconds)) => {
+			Some(SpireYield::Seconds(seconds)) => {
 				if *seconds > delta_time {
 					*seconds -= delta_time;
 					None
@@ -396,7 +321,7 @@ impl GodotCoroutine {
 					self.poll(delta_time - seconds)
 				}
 			}
-			Some(Yield::Dyn(dyn_yield)) => {
+			Some(SpireYield::Dyn(dyn_yield)) => {
 				if dyn_yield.keep_waiting() {
 					None
 				} else {
@@ -423,10 +348,9 @@ pub trait IsRunning {
 	fn is_running(&self) -> bool;
 }
 
-impl IsRunning for Gd<GodotCoroutine> {
-	/// Coroutines auto-destroy themselves when they finish
+impl IsRunning for Gd<SpireCoroutine> {
 	fn is_running(&self) -> bool {
-		self.is_instance_valid() && !self.bind().base().is_queued_for_deletion()
+		self.is_instance_valid() && self.bind().is_running()
 	}
 }
 
@@ -434,8 +358,8 @@ pub trait IsFinished {
 	fn is_finished(&self) -> bool;
 }
 
-impl<T: IsRunning> IsFinished for T {
+impl IsFinished for Gd<SpireCoroutine> {
 	fn is_finished(&self) -> bool {
-		!self.is_running()
+		!self.is_instance_valid() || self.bind().is_finished()
 	}
 }

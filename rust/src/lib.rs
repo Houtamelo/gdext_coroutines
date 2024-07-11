@@ -7,21 +7,35 @@
 #![allow(clippy::needless_return)]
 #![allow(clippy::useless_conversion)]
 #![allow(unused_doc_comments)]
-#![warn(clippy::missing_const_for_fn)]
+#![allow(private_bounds)]
 
-#![doc = include_str!("../README.md")]
+#![doc = include_str!("../../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod coroutine;
 mod yielding;
-
-#[cfg(feature = "async")]
-mod async_impl;
-
-#[cfg(feature = "integration_tests")] 
-mod integration_tests;
+mod builder;
+mod closure_types;
 
 pub mod prelude {
-	pub use crate::coroutine::*;
-	pub use crate::yielding::*;
+	pub use crate::coroutine::{
+		SpireCoroutine, 
+		StartCoroutine,
+		SIGNAL_FINISHED,
+		IsRunning,
+		IsFinished,
+		PollMode,
+	};
+	
+	pub use crate::builder::CoroutineBuilder;
+	
+	pub use crate::yielding::{
+		seconds,
+		frames, 
+		wait_while, 
+		wait_until, 
+		KeepWaiting, 
+		WaitUntilFinished,
+		SpireYield as Yield,
+	};
 }
