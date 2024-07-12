@@ -22,10 +22,8 @@ Add the dependency to your Cargo.toml file:
 
 ```toml
 [dependencies]
-gdext_coroutines = "0.3"
+gdext_coroutines = "0.4"
 ```
-
-Done :)
 
 # What does this do?
 
@@ -62,7 +60,7 @@ fn run_some_routines(node: Gd<Label>) {
 			godot_print!("Finally, no more flying pigs, oof.");
 		});
 
-	node.start_coroutine(
+	node.start_async_task(
 		async {
 			godot_print!("Executing async code!");
 			smol::Timer::after(Duration::from_secs(10)).await;
@@ -84,9 +82,11 @@ A Coroutine is a struct that derives `Node`
 pub struct SpireCoroutine { /* .. */ }
 ```
 
-When you call `spawn()` or `start_coroutine()`, a `SpireCoroutine` node is created, then added as a child of the caller.
+When you invoke `start_coroutine()`, `start_async_task()`, or `spawn()`, a `SpireCoroutine` node is created, then added as a child of the caller.
 
-Then, on every frame, the `SpireCoroutine` polls the current yield to advance its inner function.
+Then, on every frame:
+- Rust Coroutines(`start_coroutine`): polls the current yield to advance its inner function.
+- Rust Futures(`start_async_task`): checks if the future has finished executing.
 
 ```rust ignore
 #[godot_api]
@@ -134,6 +134,8 @@ You can await coroutines from GdScript, using the signal `finished`:
 var coroutine: SpireCoroutine = ..
 var result = await coroutine.finished
 ```
+
+`result` contains the return value of your coroutine/future.
 
 ---
 

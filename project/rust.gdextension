@@ -4,13 +4,13 @@ compatibility_minimum = 4.2
 reloadable=true
 
 [libraries]
-linux.debug.x86_64 = "res://../rust/target/debug/libgdext_coroutines.so"
-linux.release.x86_64 = "res://../rust/target/release/libgdext_coroutines.so"
-windows.debug.x86_64 = "res://../rust/target/debug/gdext_coroutines.dll"
-windows.release.x86_64 = "res://../rust/target/release/gdext_coroutines.dll"
-macos.debug = "res://../rust/target/debug/libgdext_coroutines.dylib"
-macos.release = "res://../rust/target/release/libgdext_coroutines.dylib"
-macos.debug.arm64 = "res://../rust/target/debug/libgdext_coroutines.dylib"
-macos.release.arm64 = "res://../rust/target/release/libgdext_coroutines.dylib"
-web.debug.wasm32 = "res://../rust/target/wasm32-unknown-emscripten/debug/gdext_coroutines.wasm"
-web.release.wasm32 = "res://../rust/target/wasm32-unknown-emscripten/release/gdext_coroutines.wasm"
+linux.debug.x86_64 = "res://../rust/integration_tests/target/debug/libintegration_tests.so"
+linux.release.x86_64 = "res://../rust/integration_tests/target/release/libintegration_tests.so"
+windows.debug.x86_64 = "res://../rust/integration_tests/target/debug/integration_tests.dll"
+windows.release.x86_64 = "res://../rust/integration_tests/target/release/integration_tests.dll"
+macos.debug = "res://../rust/integration_tests/target/debug/libintegration_tests.dylib"
+macos.release = "res://../rust/integration_tests/target/release/libintegration_tests.dylib"
+macos.debug.arm64 = "res://../rust/integration_tests/target/debug/libintegration_tests.dylib"
+macos.release.arm64 = "res://../rust/integration_tests/target/release/libintegration_tests.dylib"
+web.debug.wasm32 = "res://../rust/integration_tests/target/wasm32-unknown-emscripten/debug/integration_tests.wasm"
+web.release.wasm32 = "res://../rust/integration_tests/target/wasm32-unknown-emscripten/release/integration_tests.wasm"

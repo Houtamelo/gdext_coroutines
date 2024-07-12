@@ -3,22 +3,20 @@ use std::pin::Pin;
 
 use godot::obj::WithBaseField;
 use godot::prelude::*;
-
-use crate::closure_types::{OnFinishCall, PivotTrait};
-use crate::prelude::*;
+use crate::OnFinishCall;
 use crate::yielding::SpireYield;
 
 /// A Godot class responsible for managing a coroutine.
 ///
 /// This should not be built manually, instead use:
-/// - [CoroutineBuilder]
-/// - [node.start_coroutine](StartCoroutine::start_coroutine)
-/// - [node.run_async_fn](StartCoroutine::start_async_fn)
+/// - [crate::prelude::CoroutineBuilder]
+/// - [node.start_coroutine](crate::prelude::StartCoroutine::start_coroutine)
+/// - [node.start_async_task](crate::prelude::StartAsyncTask::start_async_task) (requires feature "async")
 #[derive(GodotClass)]
 #[class(no_init, base = Node)]
 pub struct SpireCoroutine {
 	pub(crate) base: Base<Node>,
-	pub(crate) coroutine: Pin<Box<dyn Coroutine<(), Yield = SpireYield, Return = Variant>>>,
+	pub(crate) coroutine: Box<dyn Unpin + Coroutine<(), Yield = SpireYield, Return = Variant>>,
 	pub(crate) poll_mode: PollMode,
 	pub(crate) last_yield: Option<SpireYield>,
 	pub(crate) paused: bool,
@@ -30,117 +28,6 @@ pub struct SpireCoroutine {
 pub enum PollMode {
 	Process,
 	Physics,
-}
-
-pub trait StartCoroutine {
-	/// Starts a new coroutine with default settings.
-	///
-	/// # Example
-	///
-	/// ```no_run
-	/// #![feature(coroutines)]
-	/// use godot::prelude::*;
-	/// use gdext_coroutines::prelude::*;
-	///
-	/// #[derive(GodotClass)]
-	/// #[class(init, base = Node2D)]
-	/// struct MyClass {
-	///     base: Base<Node2D>,
-	/// }
-	///
-	/// #[godot_api]
-	/// impl MyClass {
-	///     #[func]
-	///     fn do_some_stuff(&self) {
-	///         self.start_coroutine( // self can be replaced for Gd<T: Inherits<Node>>
-	///             #[coroutine] || {
-	///                 yield frames(5);
-	///
-	///                 godot_print!("Profit :3");
-	///             });
-	///
-	///         #[cfg(feature = "async")]
-	///         {
-	///             self.start_coroutine( // self can be replaced for Gd<T: Inherits<Node>>
-	///                 async {
-	///                     let result = smol::fs::read_to_string("hello.txt").await;
-	///                     return result.unwrap();
-	///                 });
-	///         }
-	///     }
-	/// }
-	/// ```
-	fn start_coroutine<Return: ToGodot, Marker>(
-		&self,
-		f: impl PivotTrait<Marker, Return>,
-	) -> Gd<SpireCoroutine> {
-		self.coroutine(f).spawn()
-	}
-
-	/// Creates a new coroutine builder with default settings.
-	/// 
-	/// The coroutine does not actually `spawn` until you call [CoroutineBuilder::spawn].
-	/// 
-	/// # Example
-	/// 
-	/// ```no_run
-	/// #![feature(coroutines)]
-	/// use godot::classes::node::ProcessMode;
-	/// use godot::prelude::*;
-	/// use gdext_coroutines::prelude::*;
-	///
-	/// fn build_coroutine(node: Gd<Node2D>) {
-	///      node.coroutine(
-	///          #[coroutine] || {
-	///              godot_print!("This is a customized coroutine!");
-	///              
-	///              return Array::from(&[20, 30, 50, 69]);
-	///          })
-	///          .auto_start(false)
-	///          .process_mode(ProcessMode::WHEN_PAUSED)
-	///          .spawn();
-	/// }
-	/// ```
-	fn coroutine<Return: ToGodot, Marker>(
-		&self,
-		f: impl PivotTrait<Marker, Return>,
-	) -> CoroutineBuilder<Return>;
-}
-
-impl<TSelf> StartCoroutine for Gd<TSelf>
-	where
-		TSelf: GodotClass + Inherits<Node>,
-{
-	fn coroutine<Return: ToGodot, Marker>(
-		&self,
-		f: impl PivotTrait<Marker, Return>,
-	) -> CoroutineBuilder<Return> {
-		CoroutineBuilder::new(self.clone().upcast(), f)
-	}
-}
-
-impl<'a, T> StartCoroutine for &'a T
-	where
-		T: WithBaseField + GodotClass<Base: Inherits<Node>>,
-{
-	fn coroutine<Return: ToGodot, Marker>(
-		&self,
-		f: impl PivotTrait<Marker, Return>,
-	) -> CoroutineBuilder<Return> {
-		CoroutineBuilder::new(self.base().clone().upcast(), f)
-	}
-}
-
-impl<'a, T> StartCoroutine for &'a mut T
-	where
-		T: WithBaseField + GodotClass<Base: Inherits<Node>>,
-{
-	fn coroutine<Return: ToGodot, Marker>(
-		&self,
-		f: impl PivotTrait<Marker, Return>,
-	) -> CoroutineBuilder<Return> {
-		CoroutineBuilder::new(self.base().clone().upcast(), f)
-	}
 }
 
 /// The name of the finished signal.
@@ -159,7 +46,6 @@ impl<'a, T> StartCoroutine for &'a mut T
 ///         node.start_coroutine(
 ///             #[coroutine] || {
 ///                 yield seconds(2.0);
-///                 
 ///                 return "Hello, I'm 2 seconds late!";
 ///             });
 ///      
@@ -179,17 +65,20 @@ impl SpireCoroutine {
 	fn finished(result: Variant) {}
 	
 	#[func]
-	fn is_paused(&self) -> bool {
+	pub fn is_paused(&self) -> bool {
 		self.paused
 	}
 	
+	/// Returns `true` if both:
+	/// - The coroutine is not paused
+	/// - The coroutine is not finished
 	#[func]
-	fn is_running(&self) -> bool {
+	pub fn is_running(&self) -> bool {
 		!self.paused && !self.base().is_queued_for_deletion()
 	}
 	
 	#[func]
-	fn is_finished(&self) -> bool {
+	pub fn is_finished(&self) -> bool {
 		self.base().is_queued_for_deletion()
 	}
 
@@ -218,8 +107,10 @@ impl SpireCoroutine {
 	pub fn force_run_to_completion(&mut self) -> Variant {
 		let mut iters_remaining = 4096;
 
+		let mut pin = Pin::new(&mut self.coroutine);
+		
 		loop {
-			match self.coroutine.as_mut().resume(()) {
+			match pin.as_mut().resume(()) {
 				CoroutineState::Yielded(_) => {} // keep going
 				CoroutineState::Complete(result) => {
 					self.de_spawn();
@@ -330,7 +221,8 @@ impl SpireCoroutine {
 				}
 			}
 			None => {
-				match self.coroutine.as_mut().resume(()) {
+				let pin = Pin::new(&mut self.coroutine);
+				match pin.resume(()) {
 					CoroutineState::Yielded(next_yield) => {
 						self.last_yield = Some(next_yield);
 						self.poll(delta_time)
@@ -345,6 +237,7 @@ impl SpireCoroutine {
 }
 
 pub trait IsRunning {
+	/// See [SpireCoroutine::is_running]
 	fn is_running(&self) -> bool;
 }
 
@@ -355,11 +248,23 @@ impl IsRunning for Gd<SpireCoroutine> {
 }
 
 pub trait IsFinished {
+	/// See [SpireCoroutine::is_finished]
 	fn is_finished(&self) -> bool;
 }
 
 impl IsFinished for Gd<SpireCoroutine> {
 	fn is_finished(&self) -> bool {
 		!self.is_instance_valid() || self.bind().is_finished()
+	}
+}
+
+pub trait IsPaused {
+	/// See [SpireCoroutine::is_paused]
+	fn is_paused(&self) -> bool;
+}
+
+impl IsPaused for Gd<SpireCoroutine> {
+	fn is_paused(&self) -> bool {
+		self.is_instance_valid() && self.bind().is_paused()
 	}
 }

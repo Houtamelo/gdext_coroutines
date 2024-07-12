@@ -12,30 +12,44 @@
 #![doc = include_str!("../../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+use godot::builtin::{Callable, Variant};
+
 mod coroutine;
 mod yielding;
 mod builder;
-mod closure_types;
+mod start_coroutine;
+
+#[cfg(feature = "async")]
+mod start_async_task;
+
+pub(crate) enum OnFinishCall {
+	Closure(Box<dyn FnOnce(Variant)>),
+	Callable(Callable),
+}
 
 pub mod prelude {
 	pub use crate::coroutine::{
-		SpireCoroutine, 
-		StartCoroutine,
+		SpireCoroutine,
 		SIGNAL_FINISHED,
 		IsRunning,
 		IsFinished,
+		IsPaused,
 		PollMode,
 	};
-	
-	pub use crate::builder::CoroutineBuilder;
-	
+
 	pub use crate::yielding::{
 		seconds,
-		frames, 
-		wait_while, 
-		wait_until, 
-		KeepWaiting, 
+		frames,
+		wait_while,
+		wait_until,
+		KeepWaiting,
 		WaitUntilFinished,
 		SpireYield as Yield,
 	};
+	
+	pub use crate::start_coroutine::StartCoroutine;
+	pub use crate::builder::CoroutineBuilder;
+	
+	#[cfg(feature = "async")]
+	pub use crate::start_async_task::StartAsyncTask;
 }

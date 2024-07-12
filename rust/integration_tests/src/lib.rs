@@ -25,7 +25,7 @@ struct TestClass {
 impl TestClass {
 	#[func]
 	fn test_routine(&mut self) -> Gd<SpireCoroutine> {
-		self.start_coroutine(
+		self.start_async_task(
 			async {
 				smol::Timer::after(Duration::from_secs(1)).await;
 				5_i32
@@ -353,12 +353,12 @@ fn test_5(node: Gd<Node>) {
 			yield frames(5);
 			5_i32
 		})
-	    .on_finish(|x: i32| {
+	    .on_finish(|x| {
 		    log(format!("Returned value: {x}"))
 	    })
 	    .spawn();
 
-	node.start_coroutine(
+	node.start_async_task(
 		async {
 			log("Async coroutine started");
 
@@ -372,7 +372,7 @@ fn test_5(node: Gd<Node>) {
 			yield frames(2);
 			5.0
 		})
-	    .on_finish(Callable::from_fn("anon",
+	    .on_finish_callable(Callable::from_fn("anon",
 		    |args| {
 			    match args.first() {
 				    Some(var) => log(format!("Args: {var:?}")),
