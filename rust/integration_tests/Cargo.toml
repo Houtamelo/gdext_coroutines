@@ -10,3 +10,4 @@ crate-type = ["lib", "cdylib"]
 gdext_coroutines = { path = "..", features = ["async"] }
 godot = "0.1"
 smol = "2.0"
+async-compat = "0.2.4"

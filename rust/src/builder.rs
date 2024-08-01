@@ -242,7 +242,14 @@ impl<R> CoroutineBuilder<R>
 		coroutine.set_process_mode(self.process_mode);
 
 		let mut owner = self.owner;
-		owner.add_child(coroutine.clone().upcast());
+		owner.add_child(
+			{
+				#[cfg(not(feature = "temp_gdext_patch"))]
+				{ coroutine.clone().upcast() }
+				#[cfg(feature = "temp_gdext_patch")]
+				{ coroutine.clone() }
+			}
+		);
 
 		coroutine
 	}
