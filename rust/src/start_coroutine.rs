@@ -1,5 +1,4 @@
 use std::ops::Coroutine;
-
 use godot::obj::WithBaseField;
 use godot::prelude::*;
 use crate::prelude::*;
@@ -23,6 +22,9 @@ pub trait StartCoroutine {
 	///         });
 	/// }
 	/// ```
+	/// 
+	/// # On Panics
+	/// If `f` panics, the SpireCoroutine will automatically self-destruct and the closure will be leaked
 	fn start_coroutine<R>(
 		&self,
 		f: impl 'static + Unpin + Coroutine<(), Yield = SpireYield, Return = R>,
@@ -57,6 +59,9 @@ pub trait StartCoroutine {
 	///         .spawn();
 	/// }
 	/// ```
+	/// 
+	/// # On Panics
+	/// If `f` panics, the SpireCoroutine will automatically self-destruct and the closure will be leaked
 	fn coroutine<R>(
 		&self,
 		f: impl 'static + Unpin + Coroutine<(), Yield = SpireYield, Return = R>,

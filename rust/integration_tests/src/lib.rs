@@ -333,6 +333,13 @@ fn test_4(node: Gd<Node>) {
 	    .auto_start(false)
 	    .process_mode(ProcessMode::INHERIT)
 	    .spawn();
+	
+	node.start_coroutine(
+		#[coroutine] move || {
+			panic!("Testing panic behavior in coroutine, this message should appear in the godot error log.");
+			#[allow(unreachable_code)]
+			()
+		});
 }
 
 fn test_5(node: Gd<Node>) {

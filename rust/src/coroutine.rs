@@ -1,8 +1,10 @@
 use std::ops::{Coroutine, CoroutineState};
+use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
 
 use godot::obj::WithBaseField;
 use godot::prelude::*;
+
 use crate::OnFinishCall;
 use crate::yielding::SpireYield;
 
@@ -30,12 +32,27 @@ pub enum PollMode {
 	Physics,
 }
 
+#[godot_api]
+impl INode for SpireCoroutine {
+	fn process(&mut self, delta: f64) {
+		if !self.paused && self.poll_mode == PollMode::Process {
+			self.run(delta);
+		}
+	}
+
+	fn physics_process(&mut self, delta: f64) {
+		if !self.paused && self.poll_mode == PollMode::Physics {
+			self.run(delta);
+		}
+	}
+}
+
 /// The name of the finished signal.
-/// 
+///
 /// You can manually connect to this signal to get the coroutine's result when it finishes.
-/// 
+///
 /// # Example
-/// 
+///
 /// ```no_run
 /// #![feature(coroutines)]
 /// use gdext_coroutines::prelude::*;
@@ -63,12 +80,12 @@ pub const SIGNAL_FINISHED: &str = "finished";
 impl SpireCoroutine {
 	#[signal]
 	fn finished(result: Variant) {}
-	
+
 	#[func]
 	pub fn is_paused(&self) -> bool {
 		self.paused
 	}
-	
+
 	/// Returns `true` if both:
 	/// - The coroutine is not paused
 	/// - The coroutine is not finished
@@ -76,14 +93,14 @@ impl SpireCoroutine {
 	pub fn is_running(&self) -> bool {
 		!self.paused && !self.base().is_queued_for_deletion()
 	}
-	
+
 	#[func]
 	pub fn is_finished(&self) -> bool {
 		self.base().is_queued_for_deletion()
 	}
 
 	/// Resumes the coroutine.
-	/// 
+	///
 	/// Resuming a coroutine that's already running doesn't do anything.
 	#[func]
 	pub fn resume(&mut self) {
@@ -91,7 +108,7 @@ impl SpireCoroutine {
 	}
 
 	/// Pauses the coroutine, ensuring it won't execute any instructions until it is resumed.
-	/// 
+	///
 	/// Pausing a coroutine that's already paused doesn't do anything.
 	#[func]
 	pub fn pause(&mut self) {
@@ -107,23 +124,30 @@ impl SpireCoroutine {
 	pub fn force_run_to_completion(&mut self) -> Variant {
 		let mut iters_remaining = 4096;
 
-		let mut pin = Pin::new(&mut self.coroutine);
-		
 		loop {
-			match pin.as_mut().resume(()) {
-				CoroutineState::Yielded(_) => {} // keep going
-				CoroutineState::Complete(result) => {
-					self.de_spawn();
-					return result;
+			match self.resume_closure() {
+				Ok(state) => {
+					match state {
+						// keep going
+						CoroutineState::Yielded(_) => {
+							iters_remaining -= 1;
+							if iters_remaining > 0 {
+								continue;
+							} else {
+								godot_error!("The coroutine exceeded the maximum number of iterations(4096). \n\
+											  This is likely a infinite loop, force stopping the coroutine.");
+								return Variant::nil();
+							}
+						}
+						CoroutineState::Complete(result) => {
+							self.de_spawn();
+							return result;
+						}
+					}
 				}
-			}
-
-			iters_remaining -= 1;
-			if iters_remaining == 0 {
-				godot_error!(
-					"The coroutine exceeded the maximum number of iterations(4096). \n\
-					 This is likely a infinite loop, force stopping the coroutine.");
-				return Variant::nil();
+				Err(_) => {
+					return Variant::nil();
+				}
 			}
 		}
 	}
@@ -157,24 +181,7 @@ impl SpireCoroutine {
 		self.base_mut().emit_signal(SIGNAL_FINISHED.into(), &[result]);
 		self.de_spawn();
 	}
-}
 
-#[godot_api]
-impl INode for SpireCoroutine {
-	fn process(&mut self, delta: f64) {
-		if !self.paused && self.poll_mode == PollMode::Process {
-			self.run(delta);
-		}
-	}
-
-	fn physics_process(&mut self, delta: f64) {
-		if !self.paused && self.poll_mode == PollMode::Physics {
-			self.run(delta);
-		}
-	}
-}
-
-impl SpireCoroutine {
 	fn de_spawn(&mut self) {
 		let mut base = self.base().to_godot();
 
@@ -221,8 +228,9 @@ impl SpireCoroutine {
 				}
 			}
 			None => {
-				let pin = Pin::new(&mut self.coroutine);
-				match pin.resume(()) {
+				let state = self.resume_closure().ok()?;
+				
+				match state {
 					CoroutineState::Yielded(next_yield) => {
 						self.last_yield = Some(next_yield);
 						self.poll(delta_time)
@@ -231,6 +239,40 @@ impl SpireCoroutine {
 						Some(result)
 					}
 				}
+			}
+		}
+	}
+
+	fn resume_closure(&mut self) -> Result<CoroutineState<SpireYield, Variant>, ()> {
+		let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+			let mut pin = Pin::new(&mut self.coroutine);
+			let yield_result = pin.as_mut().resume(());
+			yield_result
+		}));
+		
+		match result {
+			Ok(state) => Ok(state),
+			Err(err) => {
+				let dummy = Box::new(#[coroutine] || { Variant::nil() });
+
+				// If the coroutine's closure panicked, we cannot drop it as any destructors it has would be run with invalid state.
+				let must_leak = std::mem::replace(&mut self.coroutine, dummy);
+				Box::leak(must_leak);
+
+				self.kill();
+				
+				let reason: &dyn std::fmt::Debug = 
+					if let Some(str) = err.downcast_ref::<&str>() {
+						str
+					} else if let Some(string) = err.downcast_ref::<String>() {
+						string
+					} else {
+						&err
+					};
+
+				godot_error!("Coroutine's closure panicked, the SpireCoroutine will now self-destruct and leak the closure.\n\
+							  Panic Reason: \"{reason:?}\"");
+				Err(())
 			}
 		}
 	}
