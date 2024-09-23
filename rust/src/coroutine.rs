@@ -172,9 +172,6 @@ impl SpireCoroutine {
 				}
 				OnFinishCall::Callable(callable) => {
 					if callable.is_valid() {
-						#[cfg(not(feature = "temp_gdext_patch"))]
-						callable.callv(VariantArray::from(&[result.clone()]));
-						#[cfg(feature = "temp_gdext_patch")]
 						callable.callv(&VariantArray::from(&[result.clone()]));
 					}
 				}

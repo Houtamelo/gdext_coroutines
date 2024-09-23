@@ -1,16 +1,5 @@
-//! WARNING: If you're using the latest github version of gdext, do the following to make this crate compile:
-//! 
-//! 1. Activate the `temp_gdext_patch` feature in your `Cargo.toml`:
-//! ```toml
-//! [dependencies]
-//! gdext_coroutines = { version = "0.4", features = ["temp_gdext_patch"] }
-//! ```
-//! 
-//! 2. Add a dependency patch for `godot` in your `Cargo.toml`:
-//! ```toml
-//! [patch.crates-io]
-//! godot = { package = "godot", git = "https://github.com/godot-rust/gdext" }
-//! ```
+//! WARNING: If you're using the latest github version of gdext, use this crate's latest github version too,
+//! it won't compile otherwise.
 
 #![feature(coroutines)]
 #![feature(coroutine_trait)]
