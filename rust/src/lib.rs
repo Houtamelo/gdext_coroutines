@@ -1,3 +1,17 @@
+//! WARNING: If you're using the latest github version of gdext, do the following to make this crate compile:
+//! 
+//! 1. Activate the `temp_gdext_patch` feature in your `Cargo.toml`:
+//! ```toml
+//! [dependencies]
+//! gdext_coroutines = { version = "0.4", features = ["temp_gdext_patch"] }
+//! ```
+//! 
+//! 2. Add a dependency patch for `godot` in your `Cargo.toml`:
+//! ```toml
+//! [patch.crates-io]
+//! godot = { package = "godot", git = "https://github.com/godot-rust/gdext" }
+//! ```
+
 #![feature(coroutines)]
 #![feature(coroutine_trait)]
 #![feature(stmt_expr_attributes)]
@@ -8,6 +22,7 @@
 #![allow(clippy::useless_conversion)]
 #![allow(unused_doc_comments)]
 #![allow(private_bounds)]
+
 
 #![doc = include_str!("../../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
