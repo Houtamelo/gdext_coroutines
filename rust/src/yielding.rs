@@ -18,17 +18,17 @@ pub trait KeepWaiting {
 	/// 
 	/// This will be polled on every [_process](INode::process) or [_physics_process](INode::physics_process), 
 	/// depending on the configuration.
-	fn keep_waiting(&mut self) -> bool;
+	fn keep_waiting(&mut self, delta_time: f64) -> bool;
 }
 
 impl<T: FnMut() -> bool> KeepWaiting for T {
-	fn keep_waiting(&mut self) -> bool {
+	fn keep_waiting(&mut self, _delta_time: f64) -> bool {
 		self()
 	}
 }
 
 impl KeepWaiting for Gd<SpireCoroutine> {
-	fn keep_waiting(&mut self) -> bool {
+	fn keep_waiting(&mut self, _delta_time: f64) -> bool {
 		// Coroutines auto-destroy themselves when they finish
 		self.is_instance_valid()
 	}
