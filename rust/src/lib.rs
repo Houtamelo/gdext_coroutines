@@ -22,6 +22,7 @@ mod coroutine;
 mod yielding;
 mod builder;
 mod start_coroutine;
+mod pinky_promise;
 
 #[cfg(feature = "async")]
 mod start_async_task;

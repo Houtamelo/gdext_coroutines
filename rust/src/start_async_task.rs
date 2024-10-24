@@ -1,3 +1,4 @@
+use std::future::Future;
 use godot::obj::WithBaseField;
 use godot::prelude::*;
 use crate::prelude::*;
@@ -21,12 +22,24 @@ pub trait StartAsyncTask {
 	/// ```
 	fn start_async_task<R>(
 		&self,
-		f: impl std::future::Future<Output = R> + Send + 'static,
+		f: impl Future<Output = R> + Send + 'static,
 	) -> Gd<SpireCoroutine>
 		where
 			R: 'static + ToGodot + Send,
 	{
 		self.async_task(f).spawn()
+	}
+	
+	/// Just like [start_async_task], but does not enforce the `Send` bound.
+	/// 
+	/// # Safety
+	/// 
+	/// Caller must ensure that `f` cannot cause data races.
+	unsafe fn start_async_task_unchecked<R: 'static + ToGodot>(
+		&self,
+		f: impl Future<Output = R> + Unpin + 'static
+	) -> Gd<SpireCoroutine> {
+		self.async_task_unchecked(f).spawn()
 	}
 
 	/// Creates a new coroutine builder with default settings.
@@ -55,10 +68,20 @@ pub trait StartAsyncTask {
 	/// ```
 	fn async_task<R>(
 		&self,
-		f: impl std::future::Future<Output = R> + Send + 'static,
+		f: impl Future<Output = R> + Send + 'static,
 	) -> CoroutineBuilder<R>
 		where
 			R: 'static + ToGodot + Send;
+	
+	/// Just like [async_task], but does not enforce the `Send` bound.
+	/// 
+	/// # Safety
+	/// 
+	/// Caller must ensure that `f` cannot cause data races.
+	unsafe fn async_task_unchecked<R: 'static + ToGodot>(
+		&self,
+		f: impl Future<Output = R> + Unpin + 'static
+	) -> CoroutineBuilder<R>;
 }
 
 impl<TSelf> StartAsyncTask for Gd<TSelf>
@@ -67,12 +90,19 @@ impl<TSelf> StartAsyncTask for Gd<TSelf>
 {
 	fn async_task<R>(
 		&self,
-		f: impl std::future::Future<Output = R> + Send + 'static,
+		f: impl Future<Output = R> + Send + 'static,
 	) -> CoroutineBuilder<R>
 		where
 			R: 'static + ToGodot + Send,
 	{
 		CoroutineBuilder::new_async_task(self.clone().upcast(), f)
+	}
+
+	unsafe fn async_task_unchecked<R: 'static + ToGodot>(
+		&self,
+		f: impl Future<Output = R> + Unpin + 'static
+	) -> CoroutineBuilder<R> {
+		CoroutineBuilder::new_async_task_unchecked(self.clone().upcast(), f)
 	}
 }
 
@@ -82,13 +112,21 @@ impl<'a, T> StartAsyncTask for &'a T
 {
 	fn async_task<R>(
 		&self,
-		f: impl std::future::Future<Output = R> + Send + 'static,
+		f: impl Future<Output = R> + Send + 'static,
 	) -> CoroutineBuilder<R>
 		where
 			R: 'static + ToGodot + Send,
 	{
 		let base = self.base_field().to_gd();
 		CoroutineBuilder::new_async_task(base.upcast(), f)
+	}
+
+	unsafe fn async_task_unchecked<R: 'static + ToGodot>(
+		&self,
+		f: impl Future<Output = R> + Unpin + 'static
+	) -> CoroutineBuilder<R> {
+		let base = self.base_field().to_gd();
+		CoroutineBuilder::new_async_task_unchecked(base.upcast(), f)
 	}
 }
 
@@ -98,12 +136,20 @@ impl<'a, T> StartAsyncTask for &'a mut T
 {
 	fn async_task<R>(
 		&self,
-		f: impl std::future::Future<Output = R> + Send + 'static,
+		f: impl Future<Output = R> + Send + 'static,
 	) -> CoroutineBuilder<R>
 		where
 			R: 'static + ToGodot + Send,
 	{
 		let base = self.base_field().to_gd();
 		CoroutineBuilder::new_async_task(base.upcast(), f)
+	}
+
+	unsafe fn async_task_unchecked<R: 'static + ToGodot>(
+		&self,
+		f: impl Future<Output = R> + Unpin + 'static
+	) -> CoroutineBuilder<R> {
+		let base = self.base_field().to_gd();
+		CoroutineBuilder::new_async_task_unchecked(base.upcast(), f)
 	}
 }
