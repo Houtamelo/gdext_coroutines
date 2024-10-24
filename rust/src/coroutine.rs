@@ -220,7 +220,7 @@ impl SpireCoroutine {
 				}
 			}
 			Some(SpireYield::Dyn(dyn_yield)) => {
-				if dyn_yield.keep_waiting() {
+				if dyn_yield.keep_waiting(delta_time) {
 					None
 				} else {
 					self.last_yield = None;
