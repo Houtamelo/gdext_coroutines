@@ -99,6 +99,34 @@ impl<R> CoroutineBuilder<R>
 			type_hint: std::marker::PhantomData,
 		}
 	}
+	
+	#[cfg(feature = "async")]
+	#[doc(hidden)]
+	pub unsafe fn new_async_task_unchecked(
+		owner: Gd<Node>,
+		f: impl std::future::Future<Output = R> + Unpin + 'static,
+	) -> CoroutineBuilder<R> {
+		let task = smol::spawn(pinky_promise::PinkyPromise(f));
+		
+		let routine =
+			#[coroutine] move || {
+				while !task.is_finished() {
+					yield frames(1);
+				}
+				
+				smol::block_on(task).0.to_variant()
+			};
+		
+		CoroutineBuilder {
+			f: Box::new(routine),
+			owner,
+			poll_mode: PollMode::Process,
+			process_mode: ProcessMode::INHERIT,
+			auto_start: true,
+			calls_on_finish: Vec::new(),
+			type_hint: std::marker::PhantomData,
+		}
+	}
 
 	/// Whether the coroutine should be started automatically upon spawning.
 	///
@@ -245,5 +273,32 @@ impl<R> CoroutineBuilder<R>
 		owner.add_child(coroutine.clone());
 
 		coroutine
+	}
+}
+
+#[cfg(feature = "async")]
+mod pinky_promise {
+	use std::future::Future;
+	use std::pin::Pin;
+	use std::task::{Context, Poll};
+	use godot::meta::ToGodot;
+	use smol::future::FutureExt;
+
+	pub struct PinkyPromise<T>(pub T);
+
+	unsafe impl<T> Send for PinkyPromise<T> {}
+	unsafe impl<T> Sync for PinkyPromise<T> {}
+
+	impl<F: Unpin + Future<Output: ToGodot + 'static>> Future for PinkyPromise<F> {
+		type Output = PinkyPromise<F::Output>;
+
+		fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+			let result = self.0.poll(cx);
+
+			match result {
+				Poll::Ready(result) => Poll::Ready(PinkyPromise(result)),
+				Poll::Pending => Poll::Pending,
+			}
+		}
 	}
 }
