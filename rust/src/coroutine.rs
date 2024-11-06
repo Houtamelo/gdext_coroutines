@@ -178,7 +178,7 @@ impl SpireCoroutine {
 			}
 		}
 
-		self.base_mut().emit_signal(SIGNAL_FINISHED.into(), &[result]);
+		self.base_mut().emit_signal(SIGNAL_FINISHED, &[result]);
 		self.de_spawn();
 	}
 

@@ -106,7 +106,7 @@ impl<TSelf> StartAsyncTask for Gd<TSelf>
 	}
 }
 
-impl<'a, T> StartAsyncTask for &'a T
+impl<T> StartAsyncTask for &T
 	where
 		T: WithBaseField + GodotClass<Base: Inherits<Node>>,
 {
@@ -130,7 +130,7 @@ impl<'a, T> StartAsyncTask for &'a T
 	}
 }
 
-impl<'a, T> StartAsyncTask for &'a mut T
+impl<T> StartAsyncTask for &mut T
 	where
 		T: WithBaseField + GodotClass<Base: Inherits<Node>>,
 {

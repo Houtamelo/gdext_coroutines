@@ -85,7 +85,7 @@ impl<TSelf> StartCoroutine for Gd<TSelf>
 	}
 }
 
-impl<'a, T> StartCoroutine for &'a T
+impl<T> StartCoroutine for &T
 	where
 		T: WithBaseField + GodotClass<Base: Inherits<Node>>,
 {
@@ -101,7 +101,7 @@ impl<'a, T> StartCoroutine for &'a T
 	}
 }
 
-impl<'a, T> StartCoroutine for &'a mut T
+impl<T> StartCoroutine for &mut T
 	where
 		T: WithBaseField + GodotClass<Base: Inherits<Node>>,
 {
