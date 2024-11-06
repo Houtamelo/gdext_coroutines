@@ -8,6 +8,6 @@ crate-type = ["lib", "cdylib"]
 
 [dependencies]
 gdext_coroutines = { path = "..", features = ["async"] }
-godot = "0.1"
+godot = { package = "godot", git = "https://github.com/godot-rust/gdext" }
 smol = "2.0"
 async-compat = "0.2.4"
