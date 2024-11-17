@@ -22,7 +22,7 @@ Add the dependency to your Cargo.toml file:
 
 ```toml
 [dependencies]
-gdext_coroutines = "0.4"
+gdext_coroutines = "0.7"
 ```
 
 # What does this do?
@@ -128,8 +128,9 @@ Since the coroutine is a child node of whoever created it, the behavior is tied 
 
 ---
 
-### Also 1
-You can await coroutines from GdScript, using the signal `finished`:
+# Notes
+
+### 1 - You can await coroutines from GdScript, using the signal `finished`
 ```js
 var coroutine: SpireCoroutine = ..
 var result = await coroutine.finished
@@ -139,9 +140,7 @@ var result = await coroutine.finished
 
 ---
 
-### Also 2
-You can make your own custom types of yields, just implement the trait `KeepWaiting`:
-
+### 2 - You can make your own custom types of yields, just implement the trait `KeepWaiting`
 ```rust ignore
 pub trait KeepWaiting {
 	/// The coroutine calls this to check if it should keep waiting
@@ -156,3 +155,8 @@ let my_custom_yield: dyn KeepWaiting = ...;
 
 yield Yield::Dyn(Box::new(my_custom_yield));
 ```
+
+### 3 - Your main crate must have at least one godot class defined in it
+Otherwise, this crate's godot classes will not be registered in Godot.
+
+This is a known issue in gdext-rust, it's not related to gdext-coroutines.

@@ -270,7 +270,7 @@ impl<R> CoroutineBuilder<R>
 		coroutine.set_process_mode(self.process_mode);
 
 		let mut owner = self.owner;
-		owner.add_child(coroutine.clone());
+		owner.add_child(&coroutine);
 
 		coroutine
 	}

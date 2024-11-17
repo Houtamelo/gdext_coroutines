@@ -186,7 +186,7 @@ impl SpireCoroutine {
 		let mut base = self.base().to_godot();
 
 		if let Some(mut parent) = base.get_parent() {
-			parent.remove_child(base.clone())
+			parent.remove_child(&base)
 		}
 
 		base.queue_free();
