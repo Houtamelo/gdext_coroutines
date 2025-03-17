@@ -1,6 +1,6 @@
 [package]
 name = "gdext_coroutines"
-version = "0.7.0"
+version = "0.7.1"
 authors = ["Houtamelo"]
 edition = "2021"
 description = "Run Rust Async functions and Coroutines in Godot 4.2+ (through GDExtension), inspired on Unity's Coroutines design."
