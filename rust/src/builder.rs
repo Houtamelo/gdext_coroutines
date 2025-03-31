@@ -270,7 +270,8 @@ impl<R> CoroutineBuilder<R>
 		coroutine.set_process_mode(self.process_mode);
 
 		let mut owner = self.owner;
-		owner.add_child(&coroutine);
+		// In case this is being called outside the main thread
+		owner.call_deferred("add_child", &[coroutine.to_variant()]);
 
 		coroutine
 	}
