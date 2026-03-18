@@ -1,17 +1,16 @@
 # gdext_coroutines
 
-"Run Rust coroutines and async code in Godot 4.2+ (through GDExtension), inspired on Unity's Coroutines design."
+"Run Rust coroutines and async code in Godot 4.4+ (through GDExtension), inspired on Unity's Coroutines design."
 
 # Beware
 
-This crate uses 5 nightly(unstable) features:
+This crate uses 4 nightly(unstable) features:
 
 ```rust
 #![feature(coroutines)]
 #![feature(coroutine_trait)]
 #![feature(stmt_expr_attributes)]
 #![feature(unboxed_closures)]
-#![cfg_attr(feature = "async", feature(async_fn_traits))]
 ```
 
 It also requires GdExtension's `experimental_threads` feature
@@ -22,14 +21,14 @@ Add the dependency to your Cargo.toml file:
 
 ```toml
 [dependencies]
-gdext_coroutines = "0.7"
+gdext_coroutines = "1.0.0"
 ```
 
 # What does this do?
 
 Allows you to execute code in an asynchronous manner, the coroutines of this crate work very much like Unity's.
 
-It also allows you to execute async code(futures), the implementation uses the crate `smol` and requires the feature `async`.
+It also allows you to execute async code(futures) via gdext-rust's task system (`godot::task::spawn`).
 
 ```rust ignore
 #![feature(coroutines)]
@@ -40,7 +39,7 @@ fn run_some_routines(node: Gd<Label>) {
 	node.start_coroutine(
 		#[coroutine] || {
 			godot_print!("Starting coroutine");
-            
+
 			godot_print!("Waiting for 5 seconds...");
 			yield seconds(5.0);
 			godot_print!("5 seconds have passed!");
@@ -53,18 +52,23 @@ fn run_some_routines(node: Gd<Label>) {
 			let pig: Gd<Node2D> = create_pig();
 			yield wait_until(move || pig.is_flying());
 			godot_print!("Wow! Pigs are now able to fly! Somehow...");
-            
+
 			godot_print!("Waiting while pigs are still flying...");
 			let pig: Gd<Node2D> = grab_pig();
 			yield wait_while(move || pig.is_flying());
 			godot_print!("Finally, no more flying pigs, oof.");
+
+			godot_print!("Waiting for a signal...");
+			let signal = Signal::from_object_signal(&node, "some_signal");
+			yield wait_for_signal_untyped(signal);
+			godot_print!("Signal received!");
 		});
 
 	node.start_async_task(
 		async {
 			godot_print!("Executing async code!");
-			smol::Timer::after(Duration::from_secs(10)).await;
-			godot_print!("Async function finished after 10 real time seconds!");
+			some_async_fn().await;
+			godot_print!("Async function finished!");
 		});
 }
 ```
@@ -86,7 +90,7 @@ When you invoke `start_coroutine()`, `start_async_task()`, or `spawn()`, a `Spir
 
 Then, on every frame:
 - Rust Coroutines(`start_coroutine`): polls the current yield to advance its inner function.
-- Rust Futures(`start_async_task`): checks if the future has finished executing.
+- Rust Futures(`start_async_task`): polls until the spawned gdext-rust task finishes.
 
 ```rust ignore
 #[godot_api]
@@ -128,6 +132,48 @@ Since the coroutine is a child node of whoever created it, the behavior is tied 
 
 ---
 
+# Yield Types
+
+### `frames(n)` - Wait for N frames
+```rust ignore
+yield frames(5);
+```
+
+### `seconds(n)` - Wait for N seconds (engine time)
+```rust ignore
+yield seconds(2.5);
+```
+
+### `wait_until(f)` - Resume when `f` returns true
+```rust ignore
+yield wait_until(move || some_condition());
+```
+
+### `wait_while(f)` - Keep waiting while `f` returns true
+```rust ignore
+yield wait_while(move || still_busy());
+```
+
+### `wait_for_signal(signal)` - Wait for a typed signal emission
+```rust ignore
+let sig = node.signals().some_signal();
+yield wait_for_signal(&sig);
+```
+
+For untyped signals:
+```rust ignore
+let sig = Signal::from_object_signal(&node, "some_signal");
+yield wait_for_signal_untyped(sig);
+```
+
+### `wait_until_finished()` - Wait for another coroutine to finish
+```rust ignore
+let other = node.start_coroutine(#[coroutine] || { yield frames(10); });
+yield other.wait_until_finished();
+```
+
+---
+
 # Notes
 
 ### 1 - You can await coroutines from GdScript, using the signal `finished`
@@ -144,7 +190,7 @@ var result = await coroutine.finished
 ```rust ignore
 pub trait KeepWaiting {
 	/// The coroutine calls this to check if it should keep waiting
-	fn keep_waiting(&mut self) -> bool;
+	fn keep_waiting(&mut self, delta_time: f64) -> bool;
 }
 ```
 

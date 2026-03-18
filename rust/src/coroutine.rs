@@ -1,11 +1,13 @@
 use std::ops::{Coroutine, CoroutineState};
 use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
-
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use godot::obj::WithBaseField;
 use godot::prelude::*;
 
 use crate::OnFinishCall;
+use crate::prelude::KeepWaiting;
 use crate::yielding::SpireYield;
 
 /// A Godot class responsible for managing a coroutine.
@@ -13,16 +15,22 @@ use crate::yielding::SpireYield;
 /// This should not be built manually, instead use:
 /// - [crate::prelude::CoroutineBuilder]
 /// - [node.start_coroutine](crate::prelude::StartCoroutine::start_coroutine)
-/// - [node.start_async_task](crate::prelude::StartAsyncTask::start_async_task) (requires feature "async")
+/// - [node.start_async_task](crate::prelude::StartAsyncTask::start_async_task)
 #[derive(GodotClass)]
 #[class(no_init, base = Node)]
 pub struct SpireCoroutine {
-	pub(crate) base: Base<Node>,
-	pub(crate) coroutine: Box<dyn Unpin + Coroutine<(), Yield = SpireYield, Return = Variant>>,
-	pub(crate) poll_mode: PollMode,
-	pub(crate) last_yield: Option<SpireYield>,
-	pub(crate) paused: bool,
-	pub(crate) calls_on_finish: Vec<OnFinishCall>,
+    #[doc(hidden)]
+	pub base: Base<Node>,
+    #[doc(hidden)]
+	pub coroutine: Box<dyn Unpin + Coroutine<(), Yield = SpireYield, Return = Variant>>,
+    #[doc(hidden)]
+	pub poll_mode: PollMode,
+    #[doc(hidden)]
+	pub last_yield: Option<SpireYield>,
+    #[doc(hidden)]
+	pub paused: bool,
+    #[doc(hidden)]
+	pub calls_on_finish: Vec<OnFinishCall>,
 }
 
 /// Defines whether the coroutine polls on process or physics frames. 
@@ -172,7 +180,7 @@ impl SpireCoroutine {
 				}
 				OnFinishCall::Callable(callable) => {
 					if callable.is_valid() {
-						callable.callv(&VariantArray::from(&[result.clone()]));
+						callable.callv(&VarArray::from(&[result.clone()]));
 					}
 				}
 			}
@@ -183,10 +191,10 @@ impl SpireCoroutine {
 	}
 
 	fn de_spawn(&mut self) {
-		let mut base = self.base().to_godot();
+		let mut base = self.base_mut();
 
 		if let Some(mut parent) = base.get_parent() {
-			parent.remove_child(&base)
+			parent.remove_child(&*base)
 		}
 
 		base.queue_free();
@@ -227,6 +235,35 @@ impl SpireCoroutine {
 					self.poll(delta_time)
 				}
 			}
+            Some(SpireYield::Signal { signal, emission_tracker }) => {
+                // Tracks whether the signal has been emitted since we began yielding.
+                let tracker = emission_tracker
+                    .get_or_insert_with(|| { 
+                        let tracker = Arc::new(AtomicBool::new(false));
+                        
+                        signal.connect(&Callable::from_sync_fn("coroutines_signal_emission_tracker", {
+                            let tracker = tracker.clone();
+                            move |_| tracker.store(true, Ordering::Relaxed)
+                        }));
+                        
+                        tracker
+                    });
+                
+                if tracker.load(Ordering::Relaxed) {
+                    self.last_yield = None;
+                    self.poll(delta_time)
+                } else {
+                    None
+                }
+            }
+            Some(SpireYield::Coroutine(coroutine)) => {
+                if coroutine.keep_waiting(delta_time) {
+                    None
+                } else {
+                    self.last_yield = None;
+                    self.poll(delta_time)
+                }
+            }
 			None => {
 				let state = self.resume_closure().ok()?;
 				
@@ -240,14 +277,13 @@ impl SpireCoroutine {
 					}
 				}
 			}
-		}
+        }
 	}
 
 	fn resume_closure(&mut self) -> Result<CoroutineState<SpireYield, Variant>, ()> {
 		let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
 			let mut pin = Pin::new(&mut self.coroutine);
-			let yield_result = pin.as_mut().resume(());
-			yield_result
+			pin.as_mut().resume(())
 		}));
 		
 		match result {

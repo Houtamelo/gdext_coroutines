@@ -1,14 +1,11 @@
 #![feature(coroutines)]
-#![feature(coroutine_trait)]
-#![feature(stmt_expr_attributes)]
 #![feature(unboxed_closures)]
 
 use std::time::Duration;
+
 use async_compat::Compat;
 use gdext_coroutines::prelude::*;
-use godot::classes::node::ProcessMode;
-use godot::obj::WithBaseField;
-use godot::prelude::*;
+use godot::{classes::node::ProcessMode, meta::ObjectToOwned, prelude::*};
 
 struct IntegrationTests;
 
@@ -18,392 +15,485 @@ unsafe impl ExtensionLibrary for IntegrationTests {}
 #[derive(GodotClass)]
 #[class(init, base = Node)]
 struct TestClass {
-	base: Base<Node>,
+    base: Base<Node>,
 }
 
 #[godot_api]
 impl TestClass {
-	#[func]
-	fn test_routine(&mut self) -> Gd<SpireCoroutine> {
-		self.start_async_task(Compat::new(
-			async {
-				godot_print!("Using compat layer!");
-				smol::Timer::after(Duration::from_secs(2)).await;
-				godot_print!("Awaited 2 seconds, returning 5");
-				5_i32
-			}))
-	}
-	
-	#[func]
-	fn test_from_other_node(node: Gd<Node>) -> Gd<SpireCoroutine> {
-		node.start_async_task(Compat::new(
-			async {
-				godot_print!("Async task from other node!");
-				smol::Timer::after(Duration::from_secs(2)).await;
-				godot_print!("Awaited 2 seconds, returning `finished task`");
-				"finished task"
-			}))
-	}
+    #[func]
+    fn test_routine(&mut self) -> Gd<SpireCoroutine> {
+        self.start_async_task(Compat::new(async {
+            godot_print!("Using compat layer!");
+            smol::Timer::after(Duration::from_secs(2)).await;
+            godot_print!("Awaited 2 seconds, returning 5");
+            5_i32
+        }))
+    }
+
+    #[func]
+    fn test_from_other_node(node: Gd<Node>) -> Gd<SpireCoroutine> {
+        node.start_async_task(Compat::new(async {
+            godot_print!("Async task from other node!");
+            smol::Timer::after(Duration::from_secs(2)).await;
+            godot_print!("Awaited 2 seconds, returning `finished task`");
+            "finished task"
+        }))
+    }
 }
 
 #[godot_api]
 impl INode for TestClass {
-	fn ready(&mut self) {
-		let base = self.base().to_godot();
-		test_1(base);
-	}
+    fn ready(&mut self) {
+        let base = self.object_to_owned().upcast();
+        test_1(base);
+    }
 }
 
 fn log(msg: impl std::fmt::Display) {
-	godot_print!("[{:.6}] {msg}", godot::classes::Engine::singleton().get_process_frames());
+    godot_print!("[{:.6}] {msg}", godot::classes::Engine::singleton().get_process_frames());
 }
 
 fn log_err(msg: impl std::fmt::Display) {
-	godot_print_rich!("[color=red]ERROR[/color]: [{:.6}] {msg}", godot::classes::Engine::singleton().get_process_frames());
+    godot_print_rich!(
+        "[color=red]ERROR[/color]: [{:.6}] {msg}",
+        godot::classes::Engine::singleton().get_process_frames()
+    );
 }
 
 fn test_1(node: Gd<Node>) {
-	log("Starting test 1");
+    log("Starting test 1");
 
-	let first_routine =
-		node.start_coroutine(
-			#[coroutine] || {
-				log("1st Coroutine started");
+    let first_routine = node.start_coroutine(
+        #[coroutine]
+        || {
+            log("1st Coroutine started");
 
-				let engine = godot::classes::Engine::singleton();
+            let engine = godot::classes::Engine::singleton();
 
-				{
-					let start_frame = engine.get_process_frames() as i64;
+            {
+                let start_frame = engine.get_process_frames() as i64;
 
-					yield frames(2);
+                yield frames(2);
 
-					let current_frame = engine.get_process_frames() as i64;
+                let current_frame = engine.get_process_frames() as i64;
 
-					let frame_diff = current_frame - start_frame;
-					if frame_diff != 2 {
-						log_err(format!("Expected 2 frames to have passed, got: {frame_diff}"));
-					}
-				}
+                let frame_diff = current_frame - start_frame;
+                if frame_diff != 2 {
+                    log_err(format!("Expected 2 frames to have passed, got: {frame_diff}"));
+                }
+            }
 
-				{
-					let start_frame = engine.get_process_frames() as i64;
+            {
+                let start_frame = engine.get_process_frames() as i64;
 
-					yield frames(0);
+                yield frames(0);
 
-					let current_frame = engine.get_process_frames() as i64;
+                let current_frame = engine.get_process_frames() as i64;
 
-					let frame_diff = current_frame - start_frame;
-					if frame_diff != 0 {
-						log_err(format!("Expected 0 frames to have passed, got: {frame_diff}"));
-					}
-				}
+                let frame_diff = current_frame - start_frame;
+                if frame_diff != 0 {
+                    log_err(format!("Expected 0 frames to have passed, got: {frame_diff}"));
+                }
+            }
 
-				{
-					let time = godot::classes::Time::singleton();
+            {
+                let time = godot::classes::Time::singleton();
 
-					let start_time = time.get_ticks_msec() as i64;
+                let start_time = time.get_ticks_msec() as i64;
 
-					yield seconds(1.5);
+                yield seconds(1.5);
 
-					let current_time = time.get_ticks_msec() as i64;
+                let current_time = time.get_ticks_msec() as i64;
 
-					let time_passed = current_time - start_time;
-					log(format!("Time passed after 1.5 seconds yield: {time_passed} ms"));
-				}
+                let time_passed = current_time - start_time;
+                log(format!("Time passed after 1.5 seconds yield: {time_passed} ms"));
+            }
 
-				{
-					let start_frame = engine.get_process_frames() as i64;
-					let frame_end = start_frame as u64 + 60;
+            {
+                let start_frame = engine.get_process_frames() as i64;
+                let frame_end = start_frame as u64 + 60;
 
-					let moved_engine = engine.clone();
-					yield wait_until(
-						move || moved_engine.get_process_frames() >= frame_end);
+                let moved_engine = engine.clone();
+                yield wait_until(move || moved_engine.get_process_frames() >= frame_end);
 
-					let current_frame = engine.get_process_frames() as i64;
+                let current_frame = engine.get_process_frames() as i64;
 
-					let frame_diff = current_frame - start_frame;
-					if frame_diff != 60 {
-						log_err(format!("Expected 60 frames to have passed, got: {frame_diff}"));
-					}
-				}
+                let frame_diff = current_frame - start_frame;
+                if frame_diff != 60 {
+                    log_err(format!("Expected 60 frames to have passed, got: {frame_diff}"));
+                }
+            }
 
-				{
-					let start_frame = engine.get_process_frames() as i64;
-					let frame_end = start_frame as u64 + 100;
+            {
+                let start_frame = engine.get_process_frames() as i64;
+                let frame_end = start_frame as u64 + 100;
 
-					let moved_engine = engine.clone();
-					yield wait_while(
-						move || moved_engine.get_process_frames() < frame_end);
+                let moved_engine = engine.clone();
+                yield wait_while(move || moved_engine.get_process_frames() < frame_end);
 
-					let current_frame = engine.get_process_frames() as i64;
+                let current_frame = engine.get_process_frames() as i64;
 
-					let frame_diff = current_frame - start_frame;
-					if frame_diff != 100 {
-						log_err(format!("Expected 100 frames to have passed, got: {frame_diff}"));
-					}
-				}
+                let frame_diff = current_frame - start_frame;
+                if frame_diff != 100 {
+                    log_err(format!("Expected 100 frames to have passed, got: {frame_diff}"));
+                }
+            }
 
-				log("1st Coroutine finished");
-			});
+            log("1st Coroutine finished");
+        },
+    );
 
-	let node_ref = node.clone();
+    let node_ref = node.clone();
 
-	node.coroutine(
-		#[coroutine] move || {
-			log("2nd Coroutine started. Waiting for 1st before continuing...");
+    node.coroutine(
+        #[coroutine]
+        move || {
+            log("2nd Coroutine started. Waiting for 1st before continuing...");
 
-			if !first_routine.is_running() {
-				log_err("1st Coroutine not running");
-			}
+            if !first_routine.is_running() {
+                log_err("1st Coroutine not running");
+            }
 
-			yield first_routine.wait_until_finished();
+            yield first_routine.wait_until_finished();
 
-			if !first_routine.is_finished() {
-				log_err("1st Coroutine not finished");
-			}
+            if !first_routine.is_finished() {
+                log_err("1st Coroutine not finished");
+            }
 
-			log("Test 1 finished");
+            log("Test 1 finished");
 
-			test_2(node_ref);
-		})
-	    .auto_start(true)
-	    .process_mode(ProcessMode::INHERIT)
-	    .spawn();
+            test_2(node_ref);
+        },
+    )
+    .auto_start(true)
+    .process_mode(ProcessMode::INHERIT)
+    .spawn();
 }
 
 fn test_2(node: Gd<Node>) {
-	log("Starting test 2");
+    log("Starting test 2");
 
-	let mut paused_routine =
-		node.coroutine(
-			#[coroutine] || {
-				log("Paused routine started");
+    let mut paused_routine = node
+        .coroutine(
+            #[coroutine]
+            || {
+                log("Paused routine started");
 
-				yield frames(10);
+                yield frames(10);
 
-				log("Paused routine finished");
-			})
-		    .auto_start(false)
-		    .spawn();
+                log("Paused routine finished");
+            },
+        )
+        .auto_start(false)
+        .spawn();
 
-	let node_ref = node.clone();
+    let node_ref = node.clone();
 
-	node.start_coroutine(
-		#[coroutine] move || {
-			log("Auto started routine!");
+    node.start_coroutine(
+        #[coroutine]
+        move || {
+            log("Auto started routine!");
 
-			log("Resuming paused routine, then waiting for it to finish.");
+            log("Resuming paused routine, then waiting for it to finish.");
 
-			let mut bind = paused_routine.bind_mut();
-			bind.resume();
-			drop(bind);
+            let mut bind = paused_routine.bind_mut();
+            bind.resume();
+            drop(bind);
 
-			yield paused_routine.wait_until_finished();
+            yield paused_routine.wait_until_finished();
 
-			log("Test 2 finished");
+            log("Test 2 finished");
 
-			test_3(node_ref);
-		});
+            test_3(node_ref);
+        },
+    );
 }
 
 fn test_3(node: Gd<Node>) {
-	log("Starting test 3");
+    log("Starting test 3");
 
-	let mut frames_routine =
-		node.start_coroutine(
-			#[coroutine] || {
-				log("Frames routine started");
+    let mut frames_routine = node.start_coroutine(
+        #[coroutine]
+        || {
+            log("Frames routine started");
 
-				let mut frame_count = 0;
+            let mut frame_count = 0;
 
-				loop {
-					yield frames(1);
-					frame_count += 1;
-					log(format!("Frames routine frame count: {frame_count}"));
+            loop {
+                yield frames(1);
+                frame_count += 1;
+                log(format!("Frames routine frame count: {frame_count}"));
 
-					if frame_count >= 6000 {
-						log("Frames routine finished");
-						break;
-					}
-				}
-			});
+                if frame_count >= 6000 {
+                    log("Frames routine finished");
+                    break;
+                }
+            }
+        },
+    );
 
-	let node_ref = node.clone();
+    let node_ref = node.clone();
 
-	node.start_coroutine(
-		#[coroutine] move || {
-			log("Auto started routine");
+    node.start_coroutine(
+        #[coroutine]
+        move || {
+            log("Auto started routine");
 
-			log("Pausing frames routine");
+            log("Pausing frames routine");
 
-			{
-				let mut bind = frames_routine.bind_mut();
-				bind.pause();
-			}
+            {
+                let mut bind = frames_routine.bind_mut();
+                bind.pause();
+            }
 
-			yield seconds(1.0);
+            yield seconds(1.0);
 
-			log("Resuming frames routine");
+            log("Resuming frames routine");
 
-			{
-				let mut bind = frames_routine.bind_mut();
-				bind.resume();
-			}
+            {
+                let mut bind = frames_routine.bind_mut();
+                bind.resume();
+            }
 
-			yield seconds(0.5);
+            yield seconds(0.5);
 
-			log("Stopping frames routine");
+            log("Stopping frames routine");
 
-			{
-				let mut bind = frames_routine.bind_mut();
-				bind.kill();
-			}
+            {
+                let mut bind = frames_routine.bind_mut();
+                bind.kill();
+            }
 
-			yield frames(1);
+            yield frames(1);
 
-			if frames_routine.is_running() {
-				log_err("Frames routine still running after stopping");
-			}
+            if frames_routine.is_running() {
+                log_err("Frames routine still running after stopping");
+            }
 
-			if !frames_routine.is_finished() {
-				log_err("Frames routine not finished after stopping");
-			}
+            if !frames_routine.is_finished() {
+                log_err("Frames routine not finished after stopping");
+            }
 
-			log("Test 3 finished");
+            log("Test 3 finished");
 
-			test_4(node_ref);
-		});
+            test_4(node_ref);
+        },
+    );
 }
 
 fn test_4(node: Gd<Node>) {
-	log("Starting test 4");
+    log("Starting test 4");
 
-	log("Pausing Scene Tree");
+    log("Pausing Scene Tree");
 
-	node.get_tree().unwrap().set_pause(true);
+    node.get_tree().unwrap().set_pause(true);
 
-	let mut inherit_routine =
-		node.coroutine(
-			#[coroutine] move || {
-				log_err("Inherit routine still running after stopping processing");
+    let mut inherit_routine = node
+        .coroutine(
+            #[coroutine]
+            move || {
+                log_err("Inherit routine still running after stopping processing");
 
-				yield frames(5);
+                yield frames(5);
 
-				log_err("Inherit routine finished");
-			})
-		    .auto_start(true)
-		    .process_mode(ProcessMode::INHERIT)
-		    .spawn();
+                log_err("Inherit routine finished");
+            },
+        )
+        .auto_start(true)
+        .process_mode(ProcessMode::INHERIT)
+        .spawn();
 
-	let node_ref = node.clone();
+    let node_ref = node.clone();
 
-	node.coroutine(
-		#[coroutine] move || {
-			log("Always coroutine started");
+    node.coroutine(
+        #[coroutine]
+        move || {
+            log("Always coroutine started");
 
-			yield frames(50);
+            yield frames(50);
 
-			log("Always coroutine finished");
+            log("Always coroutine finished");
 
-			{
-				let mut bind = inherit_routine.bind_mut();
-				bind.kill();
-			}
+            {
+                let mut bind = inherit_routine.bind_mut();
+                bind.kill();
+            }
 
-			log("Resuming Scene Tree");
+            log("Resuming Scene Tree");
 
-			node_ref.get_tree().unwrap().set_pause(false);
+            node_ref.get_tree().unwrap().set_pause(false);
 
-			log("Test 4 finished");
+            log("Test 4 finished");
 
-			test_5(node_ref);
-		})
-	    .auto_start(true)
-	    .process_mode(ProcessMode::ALWAYS)
-	    .spawn();
+            test_5(node_ref);
+        },
+    )
+    .auto_start(true)
+    .process_mode(ProcessMode::ALWAYS)
+    .spawn();
 
-	node.coroutine(
-		#[coroutine] move || {
-			log_err("False auto_start routine is running despite not being started");
+    node.coroutine(
+        #[coroutine]
+        move || {
+            log_err("False auto_start routine is running despite not being started");
 
-			yield seconds(1.0);
+            yield seconds(1.0);
 
-			log_err("False auto_start routine finished");
-		})
-	    .auto_start(false)
-	    .process_mode(ProcessMode::INHERIT)
-	    .spawn();
-	
-	node.start_coroutine(
-		#[coroutine] move || {
-			panic!("Testing panic behavior in coroutine, this message should appear in the godot error log.");
-			#[allow(unreachable_code)]
-			()
-		});
+            log_err("False auto_start routine finished");
+        },
+    )
+    .auto_start(false)
+    .process_mode(ProcessMode::INHERIT)
+    .spawn();
+
+    node.start_coroutine(
+        #[coroutine]
+        move || {
+            panic!("Testing panic behavior in coroutine, this message should appear in the godot error log.");
+            #[allow(unreachable_code)]
+            ()
+        },
+    );
 }
 
 fn test_5(node: Gd<Node>) {
-	log("Starting test 5");
+    log("Starting test 5");
 
-	let mut coroutine =
-		node.start_coroutine(
-			#[coroutine] || {
-				log("Starting really long coroutine");
+    let mut coroutine = node.start_coroutine(
+        #[coroutine]
+        || {
+            log("Starting really long coroutine");
 
-				yield seconds(1000.0);
+            yield seconds(1000.0);
 
-				log("Really long coroutine finished");
-			});
+            log("Really long coroutine finished");
+        },
+    );
 
-	coroutine.bind_mut().force_run_to_completion();
+    coroutine.bind_mut().force_run_to_completion();
 
-	let mut coroutine_with_return =
-		node.start_coroutine(
-			#[coroutine] || {
-				yield frames(1);
+    let mut coroutine_with_return = node.start_coroutine(
+        #[coroutine]
+        || {
+            yield frames(1);
 
-				"Hello world"
-			});
+            "Hello world"
+        },
+    );
 
-	let ret = coroutine_with_return.bind_mut().force_run_to_completion();
-	log(format!("Returned value: `{ret}`"));
+    let ret = coroutine_with_return.bind_mut().force_run_to_completion();
+    log(format!("Returned value: `{ret}`"));
 
-	node.coroutine(
-		#[coroutine] || {
-			yield frames(5);
-			5_i32
-		})
-	    .on_finish(|x| {
-		    log(format!("Returned value: {x}"))
-	    })
-	    .spawn();
+    node.coroutine(
+        #[coroutine]
+        || {
+            yield frames(5);
+            5_i32
+        },
+    )
+    .on_finish(|x| log(format!("Returned value: {x}")))
+    .spawn();
 
-	node.start_async_task(
-		async {
-			log("Async coroutine started");
+    node.start_async_task(async {
+        log("Async coroutine started");
 
-			smol::Timer::after(Duration::from_secs(10)).await;
+        smol::Timer::after(Duration::from_secs(10)).await;
 
-			log("Async coroutine finished");
-		});
+        log("Async coroutine finished");
+    });
 
-	node.coroutine(
-		#[coroutine] || {
-			yield frames(2);
-			5.0
-		})
-	    .on_finish_callable(Callable::from_fn("anon",
-		    |args| {
-			    match args.first() {
-				    Some(var) => log(format!("Args: {var:?}")),
-				    None => log_err("Args array is empty"),
-			    }
+    node.coroutine(
+        #[coroutine]
+        || {
+            yield frames(2);
+            5.0
+        },
+    )
+    .on_finish_callable(Callable::from_fn("anon", {
+        let node = node.clone();
+        move |args| {
+            match args.first() {
+                Some(var) => log(format!("Args: {var:?}")),
+                None => log_err("Args array is empty"),
+            }
 
-			    log("Test 5 finished");
+            log("Test 5 finished");
+            test_6(node.clone());
+        }
+    }))
+    .spawn()
+    .bind_mut()
+    .finish_with(5_i32.to_variant());
+}
 
-			    Ok(Variant::nil())
-		    }))
-	    .spawn()
-	    .bind_mut()
-	    .finish_with(5_i32.to_variant());
+fn test_6(node: Gd<Node>) {
+    log("Starting test 6");
+
+    node.coroutine({
+        let node = node.clone();
+        #[coroutine]
+        move || {
+            log("Coroutine waiting for child_entered_tree signal...");
+
+            let engine = godot::classes::Engine::singleton();
+            
+            { 
+                // Test wait_for_signal_untyped with a built-in signal.
+                // We'll wait for `child_entered_tree` by adding a child after a delay.
+                let start_frame = engine.get_process_frames() as i64;
+                
+                let signal = Signal::from_object_signal(&node, "child_entered_tree");
+                yield wait_for_signal_untyped(signal);
+
+                let end_frame = engine.get_process_frames() as i64;
+                let diff = end_frame - start_frame;
+
+                log(format!("Signal received after {diff} frames"));
+
+                if diff < 5 {
+                    log_err(format!("Expected at least 5 frames before signal, got: {diff}"));
+                }
+            }
+
+            {
+                // Typed version
+                let start_frame = engine.get_process_frames() as i64;
+                
+                let typed_sig = node.signals().child_entered_tree();
+                yield wait_for_signal(&typed_sig);
+
+                let end_frame = engine.get_process_frames() as i64;
+                let diff = end_frame - start_frame;
+                
+                log(format!("Typed signal received after {diff} frames"));
+                
+                if diff < 5 {
+                    log_err(format!("Expected at least 5 frames before typed signal, got: {diff}"));
+                }
+            }
+            
+            log("Test 6 finished");
+        }
+    })
+    .auto_start(true)
+    .spawn();
+
+    // Emit the signal by adding a child node after 5 frames.
+    node.start_coroutine({
+        let node = node.clone();
+        #[coroutine]
+        move || {
+            yield frames(5);
+
+            log("Adding child node to trigger child_entered_tree");
+            let child = Node::new_alloc();
+            node.clone().add_child(&child);
+
+            yield frames(5);
+
+            let child = Node::new_alloc();
+            node.clone().add_child(&child);
+            log("Added another child node to trigger child_entered_tree again");
+        }
+    });
 }

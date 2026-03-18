@@ -1,0 +1,4 @@
+[workspace]
+default-members = ["rust"]
+members = ["rust", "rust/integration_tests"]
+resolver = "3"

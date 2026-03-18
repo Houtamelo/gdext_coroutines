@@ -1,9 +1,10 @@
 use std::ops::{Coroutine, CoroutineState};
 use std::pin::Pin;
-
+use std::sync::{Arc};
 use godot::classes::node::ProcessMode;
 use godot::prelude::*;
-
+use godot::task::TaskHandle;
+use parking_lot::Mutex;
 use crate::OnFinishCall;
 use crate::prelude::*;
 use crate::yielding::SpireYield;
@@ -11,21 +12,28 @@ use crate::yielding::SpireYield;
 /// Builder struct for customizing coroutine behavior.
 #[must_use]
 pub struct CoroutineBuilder<R: 'static + ToGodot = ()> {
-	pub(crate) f: Box<dyn Unpin + Coroutine<(), Yield = SpireYield, Return = Variant>>,
-	pub(crate) owner: Gd<Node>,
+    #[doc(hidden)]
+	pub f: Box<dyn Unpin + Coroutine<(), Yield = SpireYield, Return = Variant>>,
+    #[doc(hidden)]
+	pub owner: Gd<Node>,
 	/// Determines if the coroutine should be polled in [_process](INode::process)
 	/// or [_physics_process](INode::physics_process)
-	pub(crate) poll_mode: PollMode,
+    #[doc(hidden)]
+	pub poll_mode: PollMode,
 	/// Godot [ProcessMode] which the coroutine should run in.
-	pub(crate) process_mode: ProcessMode,
+    #[doc(hidden)]
+	pub process_mode: ProcessMode,
 	/// Whether the coroutine should be started automatically.
-	pub(crate) auto_start: bool,
+    #[doc(hidden)]
+	pub auto_start: bool,
 	/// A list of callables to invoke when the coroutine finishes.
 	///
 	/// The callables will be invoked with the coroutine's return value as a Variant.
-	pub(crate) calls_on_finish: Vec<OnFinishCall>,
+    #[doc(hidden)]
+	pub calls_on_finish: Vec<OnFinishCall>,
 	/// Type hint for the coroutine's return value.
-	pub(crate) type_hint: std::marker::PhantomData<R>,
+    #[doc(hidden)]
+	pub type_hint: std::marker::PhantomData<R>,
 }
 
 impl<R> CoroutineBuilder<R>
@@ -69,54 +77,32 @@ impl<R> CoroutineBuilder<R>
 	/// Creates a new coroutine builder with default settings.
 	/// 
 	/// Instead of running a regular Rust Coroutine, this runs a [Future](std::future::Future) in a background thread.
-	#[cfg(feature = "async")]
 	#[doc(hidden)]
 	pub fn new_async_task(
 		owner: Gd<Node>,
-		f: impl std::future::Future<Output = R> + Send + 'static,
+		f: impl std::future::Future<Output = R> + 'static,
 	) -> CoroutineBuilder<R>
-		where
-			R: Send,
 	{
-		let task = smol::spawn(f);
+        let result_handle = Arc::new(Mutex::new(Variant::nil()));
+        
+        let task: TaskHandle = godot::task::spawn({
+            let result_handle = Arc::clone(&result_handle);
+            async move {
+                let result = f.await;
+                let mut lock = result_handle.lock();
+                *lock = result.to_variant();
+            }
+        });
 
 		let routine =
 			#[coroutine] move || {
-				while !task.is_finished() {
+				while task.is_pending() {
 					yield frames(1);
 				}
-
-				smol::block_on(task).to_variant()
+                
+                return result_handle.lock().clone();
 			};
 
-		CoroutineBuilder {
-			f: Box::new(routine),
-			owner,
-			poll_mode: PollMode::Process,
-			process_mode: ProcessMode::INHERIT,
-			auto_start: true,
-			calls_on_finish: Vec::new(),
-			type_hint: std::marker::PhantomData,
-		}
-	}
-	
-	#[cfg(feature = "async")]
-	#[doc(hidden)]
-	pub unsafe fn new_async_task_unchecked(
-		owner: Gd<Node>,
-		f: impl std::future::Future<Output = R> + Unpin + 'static,
-	) -> CoroutineBuilder<R> {
-		let task = smol::spawn(pinky_promise::PinkyPromise(f));
-		
-		let routine =
-			#[coroutine] move || {
-				while !task.is_finished() {
-					yield frames(1);
-				}
-				
-				smol::block_on(task).0.to_variant()
-			};
-		
 		CoroutineBuilder {
 			f: Box::new(routine),
 			owner,
@@ -274,32 +260,5 @@ impl<R> CoroutineBuilder<R>
 		owner.call_deferred("add_child", &[coroutine.to_variant()]);
 
 		coroutine
-	}
-}
-
-#[cfg(feature = "async")]
-mod pinky_promise {
-	use std::future::Future;
-	use std::pin::Pin;
-	use std::task::{Context, Poll};
-	use godot::meta::ToGodot;
-	use smol::future::FutureExt;
-
-	pub struct PinkyPromise<T>(pub T);
-
-	unsafe impl<T> Send for PinkyPromise<T> {}
-	unsafe impl<T> Sync for PinkyPromise<T> {}
-
-	impl<F: Unpin + Future<Output: ToGodot + 'static>> Future for PinkyPromise<F> {
-		type Output = PinkyPromise<F::Output>;
-
-		fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-			let result = self.0.poll(cx);
-
-			match result {
-				Poll::Ready(result) => Poll::Ready(PinkyPromise(result)),
-				Poll::Pending => Poll::Pending,
-			}
-		}
 	}
 }

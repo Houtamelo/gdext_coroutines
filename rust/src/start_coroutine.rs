@@ -1,4 +1,5 @@
 use std::ops::Coroutine;
+use godot::meta::ObjectToOwned;
 use godot::obj::WithBaseField;
 use godot::prelude::*;
 use crate::prelude::*;
@@ -87,7 +88,7 @@ impl<TSelf> StartCoroutine for Gd<TSelf>
 
 impl<T> StartCoroutine for &T
 	where
-		T: WithBaseField + GodotClass<Base: Inherits<Node>>,
+		T: WithBaseField + Inherits<Node>,
 {
 	fn coroutine<R>(
 		&self,
@@ -96,14 +97,14 @@ impl<T> StartCoroutine for &T
 		where
 			R: 'static + ToGodot,
 	{
-		let base = self.base_field().to_gd();
+		let base = self.object_to_owned();
 		CoroutineBuilder::new_coroutine(base.upcast(), f)
 	}
 }
 
 impl<T> StartCoroutine for &mut T
 	where
-		T: WithBaseField + GodotClass<Base: Inherits<Node>>,
+		T: WithBaseField + Inherits<Node>,
 {
 	fn coroutine<R>(
 		&self,
@@ -112,7 +113,7 @@ impl<T> StartCoroutine for &mut T
 		where
 			R: 'static + ToGodot,
 	{
-		let base = self.base_field().to_gd();
+		let base = self.object_to_owned();
 		CoroutineBuilder::new_coroutine(base.upcast(), f)
 	}
 }
