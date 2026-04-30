@@ -1,6 +1,6 @@
 [package]
 name = "gdext_coroutines"
-version = "1.0.0"
+version = "1.1.0"
 authors = ["Houtamelo"]
 edition = "2021"
 description = "Run Rust Async functions and Coroutines in Godot 4.4+ (through GDExtension), inspired on Unity's Coroutines design."
@@ -17,7 +17,7 @@ exclude = [
 crate-type = ["lib", "cdylib"]
 
 [dependencies]
-godot = { version = "0.4.5", features = ["experimental-threads"] }
+godot = { version = "0.5.2", features = ["experimental-threads"] }
 parking_lot = "0.12.5"
 
 [package.metadata.docs.rs]

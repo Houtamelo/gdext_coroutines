@@ -1,5 +1,5 @@
 use std::future::Future;
-use godot::meta::ObjectToOwned;
+use godot::meta::conv::ObjectToOwned;
 use godot::obj::WithBaseField;
 use godot::prelude::*;
 use crate::prelude::*;
@@ -15,18 +15,21 @@ pub trait StartAsyncTask {
 	/// use gdext_coroutines::prelude::*;
 	/// 
 	/// fn showcase_start_async_task(node: Gd<Node3D>) {
-	///     node.start_async_task(async {
-	///         let result = smol::fs::read_to_string("hello.txt").await;
-	///         return result.unwrap();
-	///     });
+    ///     let sig_future = node.signals().tree_entered().to_future(); 
+	///     node.start_async_task({
+    ///         async {
+    ///             sig_future.await;
+    ///             godot_print!("Entered tree!");
+    ///         }
+    ///     });
 	/// }
 	/// ```
 	fn start_async_task<R>(
 		&self,
-		f: impl Future<Output = R> + Send + 'static,
+		f: impl Future<Output = R> + 'static,
 	) -> Gd<SpireCoroutine>
 		where
-			R: 'static + ToGodot + Send,
+			R: 'static + ToGodot,
 	{
 		self.async_task(f).spawn()
 	}
@@ -38,22 +41,19 @@ pub trait StartAsyncTask {
 	/// # Example
 	///
 	/// ```no_run
-	/// #![feature(coroutines)]
-	/// use std::time::Duration;
-	/// use godot::classes::node::ProcessMode;
-	/// use godot::prelude::*;
-	/// use gdext_coroutines::prelude::*;
+    /// #![feature(coroutines)]
+    /// use godot::prelude::*;
+    /// use gdext_coroutines::prelude::*;
 	///
-	/// fn showcase_async_task(node: Gd<Node2D>) {
-	///     node.async_task(
-	///         async {
-	///              smol::Timer::after(Duration::from_secs(5)).await;
-	///              return "Profit";
-	///         })
-	///         .auto_start(false)
-	///         .process_mode(ProcessMode::WHEN_PAUSED)
-	///         .spawn();
-	/// }
+    /// fn showcase_start_async_task(node: Gd<Node3D>) {
+    ///     let sig_future = node.signals().tree_entered().to_future(); 
+    ///     node.start_async_task({
+    ///         async {
+    ///             sig_future.await;
+    ///             godot_print!("Entered tree!");
+    ///         }
+    ///     });
+    /// }
 	/// ```
 	fn async_task<R>(
 		&self,

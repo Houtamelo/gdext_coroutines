@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use async_compat::Compat;
 use gdext_coroutines::prelude::*;
-use godot::{classes::node::ProcessMode, meta::ObjectToOwned, prelude::*};
+use godot::{classes::node::ProcessMode, meta::conv::ObjectToOwned, prelude::*};
 
 struct IntegrationTests;
 
@@ -286,7 +286,7 @@ fn test_4(node: Gd<Node>) {
 
     log("Pausing Scene Tree");
 
-    node.get_tree().unwrap().set_pause(true);
+    node.get_tree().set_pause(true);
 
     let mut inherit_routine = node
         .coroutine(
@@ -321,7 +321,7 @@ fn test_4(node: Gd<Node>) {
 
             log("Resuming Scene Tree");
 
-            node_ref.get_tree().unwrap().set_pause(false);
+            node_ref.get_tree().set_pause(false);
 
             log("Test 4 finished");
 

@@ -67,19 +67,16 @@ impl INode for SpireCoroutine {
 /// use godot::prelude::*;
 ///
 /// fn manually_connect(node: Gd<Node>) {
-///     let mut coroutine = 
-///         node.start_coroutine(
-///             #[coroutine] || {
-///                 yield seconds(2.0);
-///                 return "Hello, I'm 2 seconds late!";
-///             });
-///      
-///     coroutine.connect(SIGNAL_FINISHED.into(), Callable::from_fn("print_result", 
-///         |args| {
-///             let result = args.first().and_then(|var| var.try_to::<String>().ok()).unwrap();
-///             assert_eq!(result.as_str(), "Hello, I'm 2 seconds late!");
-///             Ok(Variant::nil())
-///         }));
+///     let mut coroutine = node.start_coroutine(
+///         #[coroutine] || {
+///             yield seconds(2.0);
+///             return "Hello, I'm 2 seconds late!";
+///         });
+///     
+///     coroutine.signals().finished().connect(|var| {
+///         let result = var.try_to::<String>().unwrap();
+///         assert_eq!(result.as_str(), "Hello, I'm 2 seconds late!");
+///     });
 /// }
 /// ```
 pub const SIGNAL_FINISHED: &str = "finished";
@@ -87,7 +84,7 @@ pub const SIGNAL_FINISHED: &str = "finished";
 #[godot_api]
 impl SpireCoroutine {
 	#[signal]
-	fn finished(result: Variant);
+	pub fn finished(result: Variant);
 
 	#[func]
 	pub fn is_paused(&self) -> bool {

@@ -1,6 +1,6 @@
 use std::sync::{Arc, atomic::AtomicBool};
 
-use godot::{obj::WithSignals, prelude::*, register::TypedSignal};
+use godot::{obj::WithSignals, prelude::*, signal::TypedSignal};
 
 use crate::prelude::*;
 
@@ -96,19 +96,20 @@ pub fn wait_for_signal_untyped(signal: Signal) -> SpireYield {
 /// use godot::prelude::*;
 ///
 /// fn showcase_wait_for_signal(node: Gd<Node>) {
-///      node.start_coroutine(
+///      node.start_coroutine({
+///           let node_cp = node.clone();
 ///           #[coroutine] move || {
-///                let sig = node.signals().child_entered_tree();
-///                yield wait_for_signal(&sig);
+///                yield wait_for_signal(&node_cp.signals().child_entered_tree());
 ///                godot_print!("Signal emitted! Resuming...");
-///           });
+///           }
+///     });
 /// }
 ///
 /// ```
 pub fn wait_for_signal<C, PS>(signal: &TypedSignal<C, PS>) -> SpireYield
 where
     C: WithSignals,
-    PS: godot::meta::ParamTuple,
+    PS: godot::meta::conv::ParamTuple,
 {
     let untyped = signal.to_untyped();
     wait_for_signal_untyped(untyped)
@@ -118,7 +119,7 @@ where
 ///
 /// `f` is invoked whenever the coroutine is polled.
 ///
-/// If un-paused, the coroutine is polled either on [_process](INode::process)
+/// If unpaused, the coroutine is polled either on [_process](INode::process)
 /// or [_physics_process](INode::physics_process)
 ///
 /// # Example
@@ -144,7 +145,7 @@ pub fn wait_while(f: impl FnMut() -> bool + 'static) -> SpireYield { SpireYield:
 ///
 /// `f` is invoked whenever the coroutine is polled.
 ///
-/// If un-paused, the coroutine is polled either on [process](INode::process)
+/// If unpaused, the coroutine is polled either on [process](INode::process)
 /// or [physics_process](INode::physics_process)
 ///
 /// # Example

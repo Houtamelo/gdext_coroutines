@@ -1,5 +1,5 @@
 use std::ops::Coroutine;
-use godot::meta::ObjectToOwned;
+use godot::meta::conv::ObjectToOwned;
 use godot::obj::WithBaseField;
 use godot::prelude::*;
 use crate::prelude::*;
